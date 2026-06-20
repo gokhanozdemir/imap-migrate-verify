@@ -1,0 +1,2 @@
+# email:yandex-password:guzel-password
+person@example.com:yandex-app-password:guzel-password
