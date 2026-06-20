@@ -15,6 +15,11 @@ failure.
 - `imapsync` installed with Homebrew
 - Yandex IMAP access enabled and, when required, a Yandex application password
 
+Güzel uses a compatibility bootstrap because the endpoint advertises its IMAP
+capabilities in the greeting but rejects the standard pre-login `CAPABILITY`
+command. It also rejects both advertised SASL mechanisms, so the client uses
+the classic IMAP `LOGIN` command over TLS.
+
 ```sh
 brew install imapsync
 npm install
@@ -51,7 +56,8 @@ The default audit covers messages whose Yandex IMAP `INTERNALDATE` is within
 the last seven days. The destination scan includes a two-day safety buffer.
 Each source message is matched anywhere on Güzel by `Message-ID`; missing or
 ambiguous IDs fall back to a semantic hash of addresses, subject, date, body,
-and attachments. A message found in another folder is reported but not copied.
+and attachments. Full bodies are downloaded only when an ID is absent or
+duplicated. A message found in another folder is reported but not copied.
 
 Reports are written as permission-`0600` JSON and text files. A run passes only
 when no recent source message remains unresolved.

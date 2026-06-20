@@ -12,7 +12,7 @@
     "test": "node --test"
   },
   "dependencies": {
-    "imapflow": "^1.0.181",
+    "imapflow": "1.4.2",
     "mailparser": "^3.7.4"
   }
 }

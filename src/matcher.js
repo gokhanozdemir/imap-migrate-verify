@@ -10,22 +10,13 @@ function chooseCandidate(source, candidates) {
 export function matchInventories(source, destination) {
   const consumed = new Set();
   const sourceIdCounts = new Map();
-  const destinationIdCounts = new Map();
 
   for (const item of source) {
     if (item.messageId) sourceIdCounts.set(item.messageId, (sourceIdCounts.get(item.messageId) ?? 0) + 1);
   }
-  for (const item of destination) {
-    if (item.messageId) {
-      destinationIdCounts.set(item.messageId, (destinationIdCounts.get(item.messageId) ?? 0) + 1);
-    }
-  }
-
   return source.map((item) => {
     let candidates;
-    const idIsUnambiguous = item.messageId
-      && sourceIdCounts.get(item.messageId) === 1
-      && (destinationIdCounts.get(item.messageId) ?? 0) <= 1;
+    const idIsUnambiguous = item.messageId && sourceIdCounts.get(item.messageId) === 1;
 
     if (idIsUnambiguous) {
       candidates = destination.filter(
@@ -35,6 +26,13 @@ export function matchInventories(source, destination) {
       candidates = destination.filter(
         (candidate, index) => !consumed.has(index) && candidate.semanticHash === item.semanticHash,
       );
+      if (!candidates.length && item.messageId) {
+        candidates = destination.filter(
+          (candidate, index) => !consumed.has(index)
+            && candidate.messageId === item.messageId
+            && (!candidate.semanticHash || !item.semanticHash),
+        );
+      }
     }
 
     const candidate = chooseCandidate(item, candidates);

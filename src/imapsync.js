@@ -52,6 +52,8 @@ function baseArguments({ account, sourceServer, destinationServer, passfile1, pa
     "--timeout1", "120",
     "--timeout2", "120",
   ];
+  if (sourceServer.authMechanism) args.push("--authmech1", sourceServer.authMechanism);
+  if (destinationServer.authMechanism) args.push("--authmech2", destinationServer.authMechanism);
   if (dryRun) args.push("--dry");
   return args;
 }

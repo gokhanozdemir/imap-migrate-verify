@@ -37,7 +37,11 @@ function reportMessages(matches) {
 }
 
 function redactError(error, account) {
-  let message = error?.message ?? String(error);
+  const server = error?.serverName ? `${error.serverName} ` : "";
+  const kind = error?.authenticationFailed ? "authentication failed" : (error?.message ?? String(error));
+  const response = error?.responseText || (typeof error?.response === "string" ? error.response : "");
+  const status = error?.responseStatus ? `IMAP ${error.responseStatus}` : "";
+  let message = `${server}${kind}${response ? `: ${response}` : ""}${status ? ` (${status})` : ""}`;
   for (const secret of [account.yandexPassword, account.guzelPassword]) {
     if (secret) message = message.split(secret).join("[REDACTED]");
   }

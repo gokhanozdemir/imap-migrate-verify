@@ -1,7 +1,24 @@
 import { ImapFlow } from "imapflow";
-import { fingerprintMessage } from "./fingerprint.js";
+import { fingerprintMessage, normalizeMessageId } from "./fingerprint.js";
 
 const AUTH_PATTERN = /auth|authentication|credentials|login failed|invalid password|wrong password/iu;
+
+class LegacySessionImapFlow extends ImapFlow {
+  async startSession() {
+    // Güzel already supplies CAPABILITY data in its greeting and rejects a
+    // separate CAPABILITY command until after authentication. Authenticate
+    // from the greeting data, then derive namespace information via LIST.
+    await this.authenticate();
+    await this.run("NAMESPACE");
+    this.usable = true;
+  }
+
+  async setAuthenticationState() {
+    this.state = this.states.AUTHENTICATED;
+    this.authenticated = true;
+    this.expectCapabilityUpdate = false;
+  }
+}
 
 export function isAuthenticationError(error) {
   return error?.authenticationFailed === true
@@ -30,11 +47,16 @@ function canonicalFolder(entry) {
 }
 
 function createClient(server, email, password) {
-  return new ImapFlow({
+  const Client = server.legacyGreetingCapabilities ? LegacySessionImapFlow : ImapFlow;
+  return new Client({
     host: server.host,
     port: server.port,
     secure: server.secure,
-    auth: { user: email, pass: password },
+    auth: {
+      user: email,
+      pass: password,
+      ...(server.loginMethod ? { loginMethod: server.loginMethod } : {}),
+    },
     logger: false,
     disableAutoIdle: true,
     connectionTimeout: 30_000,
@@ -69,21 +91,12 @@ export async function scanMailbox({ server, email, password, since, includeMessa
 
         for await (const item of client.fetch(
           uids,
-          { uid: true, envelope: true, source: true, flags: true, internalDate: true, size: true },
+          { uid: true, envelope: true, flags: true, internalDate: true, size: true },
           { uid: true },
         )) {
-          if (!item.source) {
-            throw new Error(`IMAP server did not return message source for ${folder.path} UID ${item.uid}`);
-          }
           const internalDate = item.internalDate instanceof Date
             ? item.internalDate
             : item.internalDate ? new Date(item.internalDate) : null;
-          const fingerprint = await fingerprintMessage(item.source, {
-            messageId: item.envelope?.messageId,
-            sender: item.envelope?.from?.map((address) => address.address).join(", "),
-            subject: item.envelope?.subject,
-            sentAt: item.envelope?.date?.toISOString?.(),
-          });
           messages.push({
             uid: item.uid,
             folder: folder.path,
@@ -93,7 +106,11 @@ export async function scanMailbox({ server, email, password, since, includeMessa
               : null,
             flags: [...(item.flags ?? [])],
             size: item.size,
-            ...fingerprint,
+            messageId: normalizeMessageId(item.envelope?.messageId),
+            semanticHash: null,
+            sender: item.envelope?.from?.map((address) => address.address).join(", ") ?? "",
+            subject: item.envelope?.subject ?? "",
+            sentAt: item.envelope?.date?.toISOString?.() ?? null,
           });
         }
       } finally {
@@ -101,7 +118,51 @@ export async function scanMailbox({ server, email, password, since, includeMessa
       }
     }
 
+    if (includeMessages && messages.length) {
+      const idCounts = new Map();
+      for (const message of messages) {
+        if (message.messageId) {
+          idCounts.set(message.messageId, (idCounts.get(message.messageId) ?? 0) + 1);
+        }
+      }
+      const hydrationFolders = new Map();
+      for (const message of messages) {
+        if (message.messageId && idCounts.get(message.messageId) === 1) continue;
+        const values = hydrationFolders.get(message.folder) ?? [];
+        values.push(message);
+        hydrationFolders.set(message.folder, values);
+      }
+
+      for (const [folder, folderMessages] of hydrationFolders) {
+        let lock;
+        try {
+          lock = await client.getMailboxLock(folder, { readOnly: true });
+          const byUid = new Map(folderMessages.map((message) => [message.uid, message]));
+          for await (const item of client.fetch(
+            folderMessages.map((message) => message.uid),
+            { uid: true, envelope: true, source: true },
+            { uid: true },
+          )) {
+            if (!item.source) {
+              throw new Error(`IMAP server did not return message source for ${folder} UID ${item.uid}`);
+            }
+            Object.assign(byUid.get(item.uid), await fingerprintMessage(item.source, {
+              messageId: item.envelope?.messageId,
+              sender: item.envelope?.from?.map((address) => address.address).join(", "),
+              subject: item.envelope?.subject,
+              sentAt: item.envelope?.date?.toISOString?.(),
+            }));
+          }
+        } finally {
+          lock?.release();
+        }
+      }
+    }
+
     return { counts, messages };
+  } catch (error) {
+    error.serverName = server.name;
+    throw error;
   } finally {
     await client.logout().catch(() => {});
   }

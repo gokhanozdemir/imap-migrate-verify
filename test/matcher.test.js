@@ -17,6 +17,12 @@ test("uses semantic hashes for duplicated Message-IDs as a multiset", () => {
   assert.deepEqual(matchInventories(source, destination).map(({ status }) => status), ["present", "missing"]);
 });
 
+test("a unique source Message-ID is present even if destination has extra duplicates", () => {
+  const source = [item("same-id", null)];
+  const destination = [item("same-id", "a"), item("same-id", "b")];
+  assert.equal(matchInventories(source, destination)[0].status, "present");
+});
+
 test("uses semantic hashes when Message-ID is absent", () => {
   const result = matchInventories([item(null, "same")], [item(null, "same")]);
   assert.equal(result[0].status, "present");
