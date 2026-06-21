@@ -71,6 +71,11 @@ running. Free destination space and rerun the same command to reconcile any
 partially copied batch and resume the remaining work. Checkpoints contain
 message metadata and UIDs, never passwords or message bodies. Use `--restart`
 to discard compatible saved progress and inventory the account again.
+After a successful verification, the state directory records the account's
+last successful sync time. Later runs with the same servers and audit settings
+skip that account automatically; use `--restart` to force a new verification.
+Report and state directories contain their own deny-all `.gitignore`, and the
+repository ignore rules cover account lists and common private-data filenames.
 
 The console and reports show Yandex and Güzel Inbox totals before migration,
 after every repair batch, and after final verification. Folder metadata progress

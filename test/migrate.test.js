@@ -377,3 +377,21 @@ test("a quota-paused account does not prevent another account from completing", 
   assert.equal(results[0].status, "PAUSED_QUOTA");
   assert.equal(results[1].status, "PASS");
 });
+
+test("skips an account with a matching successful-sync record", async () => {
+  let scans = 0;
+  const result = await processAccount(
+    { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
+    { days: null, dryRun: false },
+    {
+      checkpointStore: {
+        loadSuccess: async () => ({ lastSuccessfulSyncAt: "2026-06-21T10:00:00.000Z" }),
+      },
+      scanMailbox: async () => { scans += 1; return { counts: [], messages: [] }; },
+    },
+  );
+  assert.equal(result.success, true);
+  assert.equal(result.status, "SKIPPED_ALREADY_SYNCED");
+  assert.equal(result.lastSuccessfulSyncAt, "2026-06-21T10:00:00.000Z");
+  assert.equal(scans, 0);
+});

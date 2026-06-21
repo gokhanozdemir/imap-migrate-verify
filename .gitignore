@@ -1,6 +1,12 @@
 node_modules/
 reports/
-accounts.txt
-*.credentials.txt
+*-reports/
+private/
+accounts*.txt
+*.credentials.*
+*.secret.*
+.env
+.env.*
+!.env.example
 *.log
 .DS_Store

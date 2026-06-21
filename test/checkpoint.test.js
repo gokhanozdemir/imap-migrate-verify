@@ -30,6 +30,12 @@ test("writes private atomic checkpoints and ignores corrupt state", async () => 
   assert.doesNotMatch(text, /password|message body/iu);
   assert.deepEqual((await store.load()).pendingBatches[0].uids, [1, 2]);
 
+  const success = await store.saveSuccess({ sourceMessageCount: 2 });
+  assert.equal((await stat(store.successPath)).mode & 0o777, 0o600);
+  assert.equal((await store.loadSuccess()).lastSuccessfulSyncAt, success.lastSuccessfulSyncAt);
+  assert.equal((await store.loadSuccess()).sourceMessageCount, 2);
+  assert.equal(await readFile(join(parent, "state", ".gitignore"), "utf8"), "*\n!.gitignore\n");
+
   await writeFile(store.path, "{interrupted", { mode: 0o600 });
   assert.equal(await store.load(), null);
 });

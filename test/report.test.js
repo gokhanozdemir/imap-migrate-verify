@@ -20,6 +20,28 @@ test("writes private JSON and text reports", async () => {
   assert.equal((await stat(paths.textPath)).mode & 0o777, 0o600);
   assert.match(await readFile(paths.textPath, "utf8"), /Overall: PASS/);
   assert.match(await readFile(paths.textPath, "utf8"), /Audit window: all time/);
+  assert.equal(await readFile(join(parent, "reports", ".gitignore"), "utf8"), "*\n!.gitignore\n");
+});
+
+test("reports already-synchronized accounts and their last sync time", () => {
+  const text = renderTextReport({
+    startedAt: "2026-06-21T11:00:00.000Z",
+    finishedAt: "2026-06-21T11:00:01.000Z",
+    days: null,
+    dryRun: false,
+    success: true,
+    accounts: [{
+      email: "person@example.com",
+      success: true,
+      status: "SKIPPED_ALREADY_SYNCED",
+      lastSuccessfulSyncAt: "2026-06-21T10:00:00.000Z",
+      counts: [],
+      messages: [],
+      inboxCounts: { iterations: [] },
+    }],
+  });
+  assert.match(text, /Result: SKIPPED \(SYNCED\)/u);
+  assert.match(text, /Last successful sync: 2026-06-21T10:00:00.000Z/u);
 });
 
 test("reports quota pauses with resume instructions", () => {

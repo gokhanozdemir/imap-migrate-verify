@@ -20,8 +20,13 @@ export function renderTextReport(report) {
   ];
 
   for (const account of report.accounts) {
-    const result = account.status === "PAUSED_QUOTA" ? "PAUSED (QUOTA)" : account.success ? "PASS" : "FAIL";
+    const result = account.status === "PAUSED_QUOTA"
+      ? "PAUSED (QUOTA)"
+      : account.status === "SKIPPED_ALREADY_SYNCED" ? "SKIPPED (SYNCED)" : account.success ? "PASS" : "FAIL";
     lines.push(`ACCOUNT ${account.email}`, `Result: ${result}`);
+    if (account.lastSuccessfulSyncAt) {
+      lines.push(`Last successful sync: ${printable(account.lastSuccessfulSyncAt)}`);
+    }
     if (account.error) lines.push(`Error: ${printable(account.error)}`);
     if (account.status === "PAUSED_QUOTA") {
       lines.push("Action: Free destination mailbox space and rerun the same command to resume.");
@@ -80,6 +85,7 @@ export async function writeReports(report, reportDirectory) {
   const directory = resolve(reportDirectory);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700);
+  await secureWrite(join(directory, ".gitignore"), "*\n!.gitignore\n");
   const base = `migration-${safeTimestamp(new Date(report.startedAt))}`;
   const jsonPath = join(directory, `${base}.json`);
   const textPath = join(directory, `${base}.txt`);

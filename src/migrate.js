@@ -141,7 +141,19 @@ export async function processAccount(account, options, dependencies = {}) {
   };
 
   try {
-    if (options.restart) await checkpointStore?.remove();
+    if (options.restart) {
+      await checkpointStore?.remove();
+      await checkpointStore?.removeSuccess?.();
+    } else {
+      const successfulSync = await checkpointStore?.loadSuccess?.();
+      if (successfulSync) {
+        result.success = true;
+        result.status = "SKIPPED_ALREADY_SYNCED";
+        result.lastSuccessfulSyncAt = successfulSync.lastSuccessfulSyncAt;
+        log(account.email, `Already synchronized successfully at ${successfulSync.lastSuccessfulSyncAt}; skipping`);
+        return result;
+      }
+    }
     let checkpoint = await checkpointStore?.load() ?? null;
     if (checkpoint) {
       sourceSince = checkpoint.auditWindow.sourceSince
@@ -362,7 +374,13 @@ export async function processAccount(account, options, dependencies = {}) {
       result.error = `Dry run found ${missingBefore} message(s) requiring migration`;
     }
     result.status = result.success ? "PASS" : "FAILED";
-    if (result.success) await checkpointStore?.remove();
+    if (result.success) {
+      const successRecord = await checkpointStore?.saveSuccess?.({
+        sourceMessageCount: sourceInventory.messages.length,
+      });
+      result.lastSuccessfulSyncAt = successRecord?.lastSuccessfulSyncAt ?? new Date().toISOString();
+      await checkpointStore?.remove();
+    }
     else if (!options.dryRun) {
       pendingBatches = batchesForMatches(afterMatches);
       await saveCheckpoint();
