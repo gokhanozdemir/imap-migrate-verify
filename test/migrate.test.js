@@ -130,3 +130,32 @@ test("processAccount does not copy a message already present in another folder",
   assert.equal(result.messages[0].status, "present-in-other-folder");
   assert.equal(syncCalls, 0);
 });
+
+test("processAccount splits thousands of missing UIDs into bounded sync batches", async () => {
+  const sourceMessages = Array.from({ length: 401 }, (_, index) => ({
+    uid: index + 1,
+    folder: "INBOX",
+    folderKey: "\\inbox",
+    messageId: `message-${index}@example.com`,
+    semanticHash: null,
+    sender: "sender@example.com",
+    subject: `Message ${index}`,
+    sentAt: "2025-06-19T07:00:00.000Z",
+  }));
+  let destinationScans = 0;
+  const syncBatches = [];
+  const result = await processAccount(
+    { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
+    { days: null, dryRun: false },
+    {
+      scanMailbox: async ({ server }) => {
+        if (server.name === "Yandex") return { counts: [], messages: sourceMessages };
+        destinationScans += 1;
+        return { counts: [], messages: destinationScans === 1 ? [] : sourceMessages };
+      },
+      runImapsync: async ({ uids }) => { syncBatches.push(uids); },
+    },
+  );
+  assert.equal(result.success, true);
+  assert.deepEqual(syncBatches.map((batch) => batch.length), [200, 200, 1]);
+});

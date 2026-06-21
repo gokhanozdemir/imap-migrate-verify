@@ -68,8 +68,22 @@ async function createPasswordFiles(account) {
   return { directory, source, destination };
 }
 
-function uidSet(uids) {
-  return [...new Set(uids)].sort((a, b) => a - b).join(",");
+export function formatUidSet(uids) {
+  const sorted = [...new Set(uids)].sort((a, b) => a - b);
+  const ranges = [];
+  let start = sorted[0];
+  let end = start;
+  for (const uid of sorted.slice(1)) {
+    if (uid === end + 1) {
+      end = uid;
+      continue;
+    }
+    ranges.push(start === end ? String(start) : `${start}:${end}`);
+    start = uid;
+    end = uid;
+  }
+  if (start !== undefined) ranges.push(start === end ? String(start) : `${start}:${end}`);
+  return ranges.join(",");
 }
 
 export async function runImapsync(options) {
@@ -81,7 +95,7 @@ export async function runImapsync(options) {
       passfile2: passwords.destination,
     });
     if (options.folder && options.uids?.length) {
-      args.push("--folder", options.folder, "--search1", `UID ${uidSet(options.uids)}`);
+      args.push("--folder", options.folder, "--search1", `UID ${formatUidSet(options.uids)}`);
     }
 
     let result = await runProcess("imapsync", args, { signal: options.signal });

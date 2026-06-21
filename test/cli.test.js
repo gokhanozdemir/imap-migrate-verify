@@ -4,7 +4,7 @@ import { parseArguments } from "../src/cli.js";
 
 test("parses CLI defaults and overrides", () => {
   assert.deepEqual(parseArguments(["accounts.txt"]), {
-    days: 7,
+    days: null,
     concurrency: 3,
     reportDir: "reports",
     dryRun: false,

@@ -14,7 +14,7 @@ export function renderTextReport(report) {
     "IMAP migration verification report",
     `Started: ${report.startedAt}`,
     `Finished: ${report.finishedAt}`,
-    `Audit window: ${report.days} day(s)`,
+    `Audit window: ${report.days === null ? "all time" : `${report.days} day(s)`}`,
     `Dry run: ${report.dryRun ? "yes" : "no"}`,
     "",
   ];

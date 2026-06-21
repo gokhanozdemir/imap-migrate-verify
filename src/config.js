@@ -19,7 +19,7 @@ export const DESTINATION_SERVER = Object.freeze({
 });
 
 export const DEFAULTS = Object.freeze({
-  days: 7,
+  days: null,
   concurrency: 3,
   reportDir: "reports",
   destinationLookbackBufferDays: 2,

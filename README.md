@@ -47,17 +47,22 @@ npm run migrate -- accounts.txt
 Useful options:
 
 ```sh
-npm run migrate -- accounts.txt --days 7 --concurrency 3
-npm run migrate -- accounts.txt --dry-run
+npm run migrate -- accounts.txt --concurrency 3
+npm run migrate -- accounts.txt --days 7
+npm run migrate -- accounts.txt --dry-run 
 npm run migrate -- accounts.txt --report-dir private-reports
 ```
 
-The default audit covers messages whose Yandex IMAP `INTERNALDATE` is within
-the last seven days. The destination scan includes a two-day safety buffer.
-Each source message is matched anywhere on Güzel by `Message-ID`; missing or
+The default audit covers the complete mailbox history. Use `--days 7` (or any
+other positive number) when a faster recent-message audit is wanted. For a
+limited window, the destination scan includes a two-day safety buffer. Each
+source message is matched anywhere on Güzel by `Message-ID`; missing or
 ambiguous IDs fall back to a semantic hash of addresses, subject, date, body,
 and attachments. Full bodies are downloaded only when an ID is absent or
 duplicated. A message found in another folder is reported but not copied.
+Large mailboxes are processed in bounded UID batches: metadata in groups of
+250, full ambiguous-message bodies in groups of 25, and imapsync repair jobs in
+groups of 200. Consecutive UIDs are compacted into ranges.
 
 Reports are written as permission-`0600` JSON and text files. A run passes only
 when no recent source message remains unresolved.

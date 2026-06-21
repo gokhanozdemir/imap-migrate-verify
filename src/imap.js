@@ -2,6 +2,16 @@ import { ImapFlow } from "imapflow";
 import { fingerprintMessage, normalizeMessageId } from "./fingerprint.js";
 
 const AUTH_PATTERN = /auth|authentication|credentials|login failed|invalid password|wrong password/iu;
+const METADATA_BATCH_SIZE = 250;
+const BODY_BATCH_SIZE = 25;
+
+function chunks(values, size) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
+}
 
 class LegacySessionImapFlow extends ImapFlow {
   async startSession() {
@@ -93,33 +103,35 @@ export async function scanMailbox({
         });
 
         if (!includeMessages) continue;
-        const uids = await client.search({ since }, { uid: true });
+        const uids = await client.search(since ? { since } : { all: true }, { uid: true });
         onProgress({ phase: "folder", folder: folder.path, recent: uids.length });
         if (!uids.length) continue;
 
-        for await (const item of client.fetch(
-          uids,
-          { uid: true, envelope: true, flags: true, internalDate: true, size: true },
-          { uid: true },
-        )) {
-          const internalDate = item.internalDate instanceof Date
-            ? item.internalDate
-            : item.internalDate ? new Date(item.internalDate) : null;
-          messages.push({
-            uid: item.uid,
-            folder: folder.path,
-            folderKey: canonicalFolder(folder),
-            internalDate: internalDate && !Number.isNaN(internalDate.valueOf())
-              ? internalDate.toISOString()
-              : null,
-            flags: [...(item.flags ?? [])],
-            size: item.size,
-            messageId: normalizeMessageId(item.envelope?.messageId),
-            semanticHash: null,
-            sender: item.envelope?.from?.map((address) => address.address).join(", ") ?? "",
-            subject: item.envelope?.subject ?? "",
-            sentAt: item.envelope?.date?.toISOString?.() ?? null,
-          });
+        for (const uidBatch of chunks(uids, METADATA_BATCH_SIZE)) {
+          for await (const item of client.fetch(
+            uidBatch,
+            { uid: true, envelope: true, flags: true, internalDate: true, size: true },
+            { uid: true },
+          )) {
+            const internalDate = item.internalDate instanceof Date
+              ? item.internalDate
+              : item.internalDate ? new Date(item.internalDate) : null;
+            messages.push({
+              uid: item.uid,
+              folder: folder.path,
+              folderKey: canonicalFolder(folder),
+              internalDate: internalDate && !Number.isNaN(internalDate.valueOf())
+                ? internalDate.toISOString()
+                : null,
+              flags: [...(item.flags ?? [])],
+              size: item.size,
+              messageId: normalizeMessageId(item.envelope?.messageId),
+              semanticHash: null,
+              sender: item.envelope?.from?.map((address) => address.address).join(", ") ?? "",
+              subject: item.envelope?.subject ?? "",
+              sentAt: item.envelope?.date?.toISOString?.() ?? null,
+            });
+          }
         }
       } finally {
         lock?.release();
@@ -147,20 +159,25 @@ export async function scanMailbox({
         try {
           lock = await client.getMailboxLock(folder, { readOnly: true });
           const byUid = new Map(folderMessages.map((message) => [message.uid, message]));
-          for await (const item of client.fetch(
+          for (const uidBatch of chunks(
             folderMessages.map((message) => message.uid),
-            { uid: true, envelope: true, source: true },
-            { uid: true },
+            BODY_BATCH_SIZE,
           )) {
-            if (!item.source) {
-              throw new Error(`IMAP server did not return message source for ${folder} UID ${item.uid}`);
+            for await (const item of client.fetch(
+              uidBatch,
+              { uid: true, envelope: true, source: true },
+              { uid: true },
+            )) {
+              if (!item.source) {
+                throw new Error(`IMAP server did not return message source for ${folder} UID ${item.uid}`);
+              }
+              Object.assign(byUid.get(item.uid), await fingerprintMessage(item.source, {
+                messageId: item.envelope?.messageId,
+                sender: item.envelope?.from?.map((address) => address.address).join(", "),
+                subject: item.envelope?.subject,
+                sentAt: item.envelope?.date?.toISOString?.(),
+              }));
             }
-            Object.assign(byUid.get(item.uid), await fingerprintMessage(item.source, {
-              messageId: item.envelope?.messageId,
-              sender: item.envelope?.from?.map((address) => address.address).join(", "),
-              subject: item.envelope?.subject,
-              sentAt: item.envelope?.date?.toISOString?.(),
-            }));
           }
         } finally {
           lock?.release();

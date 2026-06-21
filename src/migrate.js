@@ -3,7 +3,18 @@ import { scanMailbox, withTransientRetry } from "./imap.js";
 import { runImapsync } from "./imapsync.js";
 import { finalizeMatches, matchInventories } from "./matcher.js";
 
+const SYNC_BATCH_SIZE = 200;
+
+function chunks(values, size = SYNC_BATCH_SIZE) {
+  const result = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
+}
+
 function cutoffDate(days) {
+  if (days === null || days === undefined) return null;
   return new Date(Date.now() - days * 24 * 60 * 60 * 1_000);
 }
 
@@ -64,7 +75,9 @@ export async function processAccount(account, options, dependencies = {}) {
   const sync = dependencies.runImapsync ?? runImapsync;
   const log = options.log ?? (() => {});
   const sourceSince = cutoffDate(options.days);
-  const destinationSince = cutoffDate(options.days + DEFAULTS.destinationLookbackBufferDays);
+  const destinationSince = options.days === null || options.days === undefined
+    ? null
+    : cutoffDate(options.days + DEFAULTS.destinationLookbackBufferDays);
   const started = Date.now();
 
   const result = {
@@ -113,20 +126,23 @@ export async function processAccount(account, options, dependencies = {}) {
 
     const missingFolders = missingByFolder(beforeMatches);
     for (const [folder, uids] of missingFolders) {
-      log(
-        account.email,
-        `${options.dryRun ? "Previewing" : "Copying"} ${uids.length} missing message(s) from ${folder}`,
-      );
-      await sync({
-        account,
-        sourceServer: SOURCE_SERVER,
-        destinationServer: DESTINATION_SERVER,
-        dryRun: options.dryRun,
-        folder,
-        uids,
-        signal: options.signal,
-        onRetry: () => log(account.email, "Transient imapsync failure; retrying once"),
-      });
+      for (const [batchIndex, uidBatch] of chunks(uids).entries()) {
+        log(
+          account.email,
+          `${options.dryRun ? "Previewing" : "Copying"} ${uidBatch.length} missing message(s) `
+          + `from ${folder} (batch ${batchIndex + 1}/${Math.ceil(uids.length / SYNC_BATCH_SIZE)})`,
+        );
+        await sync({
+          account,
+          sourceServer: SOURCE_SERVER,
+          destinationServer: DESTINATION_SERVER,
+          dryRun: options.dryRun,
+          folder,
+          uids: uidBatch,
+          signal: options.signal,
+          onRetry: () => log(account.email, "Transient imapsync failure; retrying once"),
+        });
+      }
     }
 
     let destinationAfter = await withTransientRetry(() => scan({
@@ -141,17 +157,19 @@ export async function processAccount(account, options, dependencies = {}) {
     if (!options.dryRun) {
       const retryFolders = missingByFolder(afterMatches);
       for (const [folder, uids] of retryFolders) {
-        log(account.email, `Retrying ${uids.length} unresolved message(s) from ${folder}`);
-        await sync({
-          account,
-          sourceServer: SOURCE_SERVER,
-          destinationServer: DESTINATION_SERVER,
-          dryRun: false,
-          folder,
-          uids,
-          signal: options.signal,
-          onRetry: () => log(account.email, "Transient targeted sync failure; retrying once"),
-        });
+        for (const uidBatch of chunks(uids)) {
+          log(account.email, `Retrying ${uidBatch.length} unresolved message(s) from ${folder}`);
+          await sync({
+            account,
+            sourceServer: SOURCE_SERVER,
+            destinationServer: DESTINATION_SERVER,
+            dryRun: false,
+            folder,
+            uids: uidBatch,
+            signal: options.signal,
+            onRetry: () => log(account.email, "Transient targeted sync failure; retrying once"),
+          });
+        }
       }
       if (retryFolders.size) {
         destinationAfter = await withTransientRetry(() => scan({

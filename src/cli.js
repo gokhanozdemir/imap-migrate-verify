@@ -10,7 +10,7 @@ import { writeReports } from "./report.js";
 const HELP = `Usage: npm run migrate -- <accounts-file> [options]
 
 Options:
-  --days <n>          Recent-message audit window (default: 7)
+  --days <n>          Limit audit to the most recent N days (default: all time)
   --concurrency <n>   Mailboxes processed simultaneously (default: 3)
   --report-dir <path> Report directory (default: reports)
   --dry-run           Compare and preview imapsync without copying
@@ -73,7 +73,8 @@ async function main() {
   process.stdout.write(`Using ${version}\n`);
   process.stdout.write(
     `${options.dryRun ? "Previewing" : "Migrating"} ${accounts.length} account(s), `
-    + `${options.concurrency} at a time, with a ${options.days}-day message audit\n`,
+    + `${options.concurrency} at a time, with an `
+    + `${options.days === null ? "all-time" : `${options.days}-day`} message audit\n`,
   );
 
   const startedAt = new Date().toISOString();
