@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import type { AppSettings } from "../types.ts";
 
 const CONFIG_DIR = join(homedir(), ".config", "imap-migrate");
-const SETTINGS_PATH = join(CONFIG_DIR, "settings.json");
+const SETTINGS_FILE = join(CONFIG_DIR, "settings.json");
 
 const DEFAULTS: AppSettings = {
   source: { host: "", port: 993, secure: true },
@@ -14,9 +14,15 @@ const DEFAULTS: AppSettings = {
   imapsyncPath: "imapsync",
 };
 
+async function ensureConfigDir(): Promise<void> {
+  await Bun.file(CONFIG_DIR).exists().catch(() => null);
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 });
+}
+
 export async function getSettings(): Promise<AppSettings> {
   try {
-    const text = await Bun.file(SETTINGS_PATH).text();
+    const text = await Bun.file(SETTINGS_FILE).text();
     return { ...DEFAULTS, ...JSON.parse(text) };
   } catch {
     return { ...DEFAULTS };
@@ -24,5 +30,6 @@ export async function getSettings(): Promise<AppSettings> {
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  await Bun.write(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  await ensureConfigDir();
+  await Bun.write(SETTINGS_FILE, JSON.stringify(settings, null, 2));
 }
