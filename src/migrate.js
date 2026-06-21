@@ -320,6 +320,10 @@ export async function processAccount(account, options, dependencies = {}) {
       pendingBatches.shift();
       completedSyncBatches += 1;
       await saveCheckpoint();
+      if (options.pauseSignal?.aborted) {
+        result.status = "PAUSED_USER";
+        return result;
+      }
       const guzelInbox = await withTransientRetry(() => readInboxCount({
         server: destinationServer,
         email: account.email,

@@ -1,0 +1,28 @@
+{
+  "name": "imap-migrate-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop GUI for imap-migrate-verify built on Elektrobun",
+  "scripts": {
+    "dev": "bun run src/devserver.ts",
+    "dev:elektrobun": "bun run src/main.ts",
+    "build:ui": "bun build ui/src/main.tsx --outdir ui/dist --target browser --minify",
+    "build": "bun run build:ui && elektrobun build",
+    "package": "elektrobun package"
+  },
+  "dependencies": {
+    "elektrobun": "^0.0.1",
+    "preact": "^10.25.4",
+    "@preact/signals": "^2.0.4",
+    "preact-iso": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "esbuild": "^0.25.0"
+  },
+  "elektrobun": {
+    "mainEntry": "src/main.ts",
+    "webviewEntry": "ui/index.html"
+  }
+}

@@ -75,6 +75,18 @@ function createClient(server, email, password) {
   });
 }
 
+export async function testConnection(server, email, password) {
+  const client = createClient(server, email, password);
+  try {
+    await client.connect();
+    await client.logout();
+    return { status: "connected" };
+  } catch (error) {
+    if (isAuthenticationError(error)) return { status: "auth_failed", detail: error.message };
+    return { status: "network_error", detail: error.message };
+  }
+}
+
 export async function scanMailbox({
   server,
   email,
