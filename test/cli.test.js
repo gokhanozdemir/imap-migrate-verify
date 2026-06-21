@@ -8,6 +8,7 @@ test("parses CLI defaults and overrides", () => {
     concurrency: 3,
     reportDir: "reports",
     dryRun: false,
+    restart: false,
     accountsFile: "accounts.txt",
   });
   const custom = parseArguments([
@@ -17,6 +18,7 @@ test("parses CLI defaults and overrides", () => {
   assert.equal(custom.concurrency, 2);
   assert.equal(custom.dryRun, true);
   assert.equal(custom.reportDir, "private");
+  assert.equal(parseArguments(["accounts.txt", "--restart"]).restart, true);
 });
 
 test("rejects unsafe or ambiguous CLI values", () => {

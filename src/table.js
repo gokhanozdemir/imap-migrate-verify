@@ -67,7 +67,7 @@ export function summaryRows(accounts) {
     const statuses = Object.groupBy(account.messages ?? [], (message) => message.status);
     return {
       account: account.email,
-      result: account.success ? "PASS" : "FAIL",
+      result: account.status === "PAUSED_QUOTA" ? "PAUSED (QUOTA)" : account.success ? "PASS" : "FAIL",
       checked: account.messages?.length ?? 0,
       copied: statuses["copied-and-verified"]?.length ?? 0,
       elsewhere: statuses["present-in-other-folder"]?.length ?? 0,

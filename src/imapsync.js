@@ -5,6 +5,8 @@ import { join } from "node:path";
 
 const TRANSIENT_EXIT_CODES = new Set([101, 102]);
 const AUTH_EXIT_CODES = new Set([161, 162]);
+const OVER_QUOTA_EXIT_CODE = 113;
+const OVER_QUOTA_PATTERN = /OVERQUOTA|mailbox is full|quota limit (?:will be|has been) exceeded|not enough (?:disk )?quota/iu;
 
 function runProcess(command, args, { signal } = {}) {
   return new Promise((resolve, reject) => {
@@ -86,6 +88,27 @@ export function formatUidSet(uids) {
   return ranges.join(",");
 }
 
+export function classifyImapsyncFailure(result) {
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
+  if (result.code === OVER_QUOTA_EXIT_CODE || OVER_QUOTA_PATTERN.test(output)) {
+    return {
+      code: "quota_exceeded",
+      kind: "quota",
+      retryable: false,
+      message: "destination mailbox is full; free space on the destination and rerun the same command",
+      output,
+    };
+  }
+  const authentication = AUTH_EXIT_CODES.has(result.code);
+  return {
+    code: authentication ? "authentication_failed" : "migration_failed",
+    kind: authentication ? "authentication" : "migration",
+    retryable: TRANSIENT_EXIT_CODES.has(result.code),
+    message: `imapsync ${authentication ? "authentication" : "migration"} failure (exit ${result.code})`,
+    output,
+  };
+}
+
 export async function runImapsync(options) {
   const passwords = await createPasswordFiles(options.account);
   try {
@@ -104,11 +127,13 @@ export async function runImapsync(options) {
       result = await runProcess("imapsync", args, { signal: options.signal });
     }
     if (result.code !== 0) {
-      const kind = AUTH_EXIT_CODES.has(result.code) ? "authentication" : "migration";
-      const error = new Error(`imapsync ${kind} failure (exit ${result.code})`);
+      const failure = classifyImapsyncFailure(result);
+      const error = new Error(failure.message);
       error.exitCode = result.code;
-      error.kind = kind;
-      error.output = `${result.stdout}\n${result.stderr}`.trim();
+      error.code = failure.code;
+      error.kind = failure.kind;
+      error.retryable = failure.retryable;
+      error.output = failure.output;
       throw error;
     }
     return result;

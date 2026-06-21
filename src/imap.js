@@ -100,6 +100,9 @@ export async function scanMailbox({
           folder: folder.path,
           folderKey: canonicalFolder(folder),
           messages: client.mailbox?.exists ?? 0,
+          uidValidity: client.mailbox?.uidValidity == null
+            ? null
+            : String(client.mailbox.uidValidity),
         });
 
         if (!includeMessages) continue;

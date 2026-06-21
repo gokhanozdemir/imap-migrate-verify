@@ -20,8 +20,12 @@ export function renderTextReport(report) {
   ];
 
   for (const account of report.accounts) {
-    lines.push(`ACCOUNT ${account.email}`, `Result: ${account.success ? "PASS" : "FAIL"}`);
+    const result = account.status === "PAUSED_QUOTA" ? "PAUSED (QUOTA)" : account.success ? "PASS" : "FAIL";
+    lines.push(`ACCOUNT ${account.email}`, `Result: ${result}`);
     if (account.error) lines.push(`Error: ${printable(account.error)}`);
+    if (account.status === "PAUSED_QUOTA") {
+      lines.push("Action: Free destination mailbox space and rerun the same command to resume.");
+    }
     if (account.inboxCounts?.before) {
       lines.push(
         `Inbox totals before: Yandex=${account.inboxCounts.before.yandex}, `

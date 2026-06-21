@@ -15,6 +15,7 @@ Options:
   --concurrency <n>   Mailboxes processed simultaneously (default: 3)
   --report-dir <path> Report directory (default: reports)
   --dry-run           Compare and preview imapsync without copying
+  --restart           Discard saved progress and start a fresh inventory
   -h, --help          Show this help
 `;
 
@@ -24,6 +25,7 @@ export function parseArguments(argv) {
     concurrency: DEFAULTS.concurrency,
     reportDir: DEFAULTS.reportDir,
     dryRun: false,
+    restart: false,
     accountsFile: null,
   };
 
@@ -32,6 +34,10 @@ export function parseArguments(argv) {
     if (argument === "--help" || argument === "-h") return { ...options, help: true };
     if (argument === "--dry-run") {
       options.dryRun = true;
+      continue;
+    }
+    if (argument === "--restart") {
+      options.restart = true;
       continue;
     }
     if (["--days", "--concurrency", "--report-dir"].includes(argument)) {
@@ -112,6 +118,9 @@ async function main() {
   const paths = await writeReports(report, options.reportDir);
   process.stdout.write(`Reports:\n  ${paths.textPath}\n  ${paths.jsonPath}\n`);
   process.stdout.write(`Overall: ${report.success ? "PASS" : "FAIL"}\n`);
+  if (accountResults.some((account) => account.status === "PAUSED_QUOTA")) {
+    process.stdout.write("One or more accounts are paused because the destination is full. Free space and rerun the same command.\n");
+  }
   if (!report.success) process.exitCode = 1;
 }
 

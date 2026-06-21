@@ -51,6 +51,7 @@ npm run migrate -- accounts.txt --concurrency 3
 npm run migrate -- accounts.txt --days 7
 npm run migrate -- accounts.txt --dry-run 
 npm run migrate -- accounts.txt --report-dir private-reports
+npm run migrate -- accounts.txt --restart
 ```
 
 The default audit covers the complete mailbox history. Use `--days 7` (or any
@@ -63,6 +64,13 @@ duplicated. A message found in another folder is reported but not copied.
 Large mailboxes are processed in bounded UID batches: metadata in groups of
 250, full ambiguous-message bodies in groups of 25, and imapsync repair jobs in
 groups of 200. Consecutive UIDs are compacted into ranges.
+
+Non-dry runs save private, atomic checkpoints under the report directory. If a
+destination mailbox fills up, that account is paused while other accounts keep
+running. Free destination space and rerun the same command to reconcile any
+partially copied batch and resume the remaining work. Checkpoints contain
+message metadata and UIDs, never passwords or message bodies. Use `--restart`
+to discard compatible saved progress and inventory the account again.
 
 The console and reports show Yandex and Güzel Inbox totals before migration,
 after every repair batch, and after final verification. Folder metadata progress

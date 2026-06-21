@@ -172,3 +172,208 @@ test("processAccount splits thousands of missing UIDs into bounded sync batches"
     [401, 401, 401],
   );
 });
+
+test("pauses on quota and resumes only messages still missing from a partial batch", async () => {
+  const sourceMessages = Array.from({ length: 401 }, (_, index) => ({
+    uid: index + 1,
+    folder: "INBOX",
+    folderKey: "\\inbox",
+    messageId: `resume-${index}@example.com`,
+    semanticHash: null,
+    sender: "sender@example.com",
+    subject: `Message ${index}`,
+    sentAt: "2025-06-19T07:00:00.000Z",
+  }));
+  const counts = [{
+    folder: "INBOX",
+    folderKey: "\\inbox",
+    messages: 401,
+    uidValidity: "7",
+  }];
+  let saved = null;
+  const checkpointStore = {
+    load: async () => saved,
+    save: async (value) => { saved = structuredClone(value); },
+    remove: async () => { saved = null; },
+  };
+  let firstDestinationScan = true;
+  let firstSyncCalls = 0;
+  const first = await processAccount(
+    { email: "person@example.com", yandexPassword: "source-secret", guzelPassword: "destination-secret" },
+    { days: null, dryRun: false },
+    {
+      checkpointStore,
+      scanMailbox: async ({ server }) => {
+        if (server.name === "Yandex") return { counts, messages: sourceMessages };
+        if (firstDestinationScan) {
+          firstDestinationScan = false;
+          return { counts: [], messages: [] };
+        }
+        throw new Error("final scan should not run after quota failure");
+      },
+      runImapsync: async () => {
+        firstSyncCalls += 1;
+        if (firstSyncCalls === 2) {
+          throw Object.assign(new Error("destination mailbox is full"), {
+            code: "quota_exceeded",
+            output: "[OVERQUOTA] destination-secret mailbox is full",
+          });
+        }
+      },
+      getMailboxCount: async () => 200,
+    },
+  );
+
+  assert.equal(first.status, "PAUSED_QUOTA");
+  assert.match(first.error, /\[REDACTED\]/u);
+  assert.deepEqual(saved.pendingBatches.map((batch) => batch.uids.length), [200, 1]);
+  assert.doesNotMatch(JSON.stringify(saved), /source-secret|destination-secret/u);
+
+  let destinationScans = 0;
+  const resumedBatches = [];
+  const resumed = await processAccount(
+    { email: "person@example.com", yandexPassword: "source-secret", guzelPassword: "destination-secret" },
+    { days: null, dryRun: false },
+    {
+      checkpointStore,
+      scanMailbox: async ({ server, includeMessages }) => {
+        if (server.name === "Yandex") {
+          assert.equal(includeMessages, false);
+          return { counts, messages: [] };
+        }
+        destinationScans += 1;
+        return {
+          counts,
+          messages: destinationScans === 1 ? sourceMessages.slice(0, 250) : sourceMessages,
+        };
+      },
+      runImapsync: async ({ uids }) => { resumedBatches.push(uids); },
+      getMailboxCount: async () => 401,
+    },
+  );
+
+  assert.equal(resumed.success, true);
+  assert.deepEqual(resumedBatches.map((uids) => uids.length), [150, 1]);
+  assert.equal(resumedBatches[0][0], 251);
+  assert.equal(saved, null);
+});
+
+test("discards a checkpoint when source UIDVALIDITY changes", async () => {
+  const sourceMessage = {
+    uid: 1,
+    folder: "INBOX",
+    folderKey: "\\inbox",
+    messageId: "fresh@example.com",
+    semanticHash: null,
+  };
+  let saved = {
+    auditWindow: { sourceSince: null, destinationSince: null },
+    sourceInventory: {
+      counts: [{ folder: "INBOX", folderKey: "\\inbox", messages: 1, uidValidity: "1" }],
+      messages: [sourceMessage],
+    },
+    destinationBefore: { counts: [], messages: [] },
+    pendingBatches: [{ folder: "INBOX", uids: [1] }],
+    totalSyncBatches: 1,
+    completedSyncBatches: 0,
+    inboxCounts: { before: null, iterations: [], after: null },
+  };
+  let removals = 0;
+  let sourceScans = 0;
+  const checkpointStore = {
+    load: async () => saved,
+    save: async (value) => { saved = structuredClone(value); },
+    remove: async () => { removals += 1; saved = null; },
+  };
+  let destinationScans = 0;
+  const result = await processAccount(
+    { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
+    { days: null, dryRun: false },
+    {
+      checkpointStore,
+      scanMailbox: async ({ server, includeMessages }) => {
+        if (server.name === "Yandex") {
+          sourceScans += 1;
+          if (includeMessages === false) {
+            return { counts: [{ folder: "INBOX", folderKey: "\\inbox", messages: 1, uidValidity: "2" }], messages: [] };
+          }
+          return { counts: [], messages: [sourceMessage] };
+        }
+        destinationScans += 1;
+        return { counts: [], messages: destinationScans === 1 ? [] : [sourceMessage] };
+      },
+      runImapsync: async () => {},
+      getMailboxCount: async () => 1,
+    },
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(sourceScans, 2);
+  assert.ok(removals >= 2);
+});
+
+test("dry runs never load, save, or remove checkpoints", async () => {
+  const calls = [];
+  const result = await processAccount(
+    { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
+    { days: 7, dryRun: true, restart: true },
+    {
+      checkpointStore: {
+        load: async () => { calls.push("load"); },
+        save: async () => { calls.push("save"); },
+        remove: async () => { calls.push("remove"); },
+      },
+      scanMailbox: async () => ({ counts: [], messages: [] }),
+    },
+  );
+  assert.equal(result.success, true);
+  assert.deepEqual(calls, []);
+});
+
+test("restart discards saved progress before loading", async () => {
+  const calls = [];
+  const checkpointStore = {
+    remove: async () => { calls.push("remove"); },
+    load: async () => { calls.push("load"); return null; },
+    save: async () => { calls.push("save"); },
+  };
+  const result = await processAccount(
+    { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
+    { days: null, dryRun: false, restart: true },
+    {
+      checkpointStore,
+      scanMailbox: async () => ({ counts: [], messages: [] }),
+    },
+  );
+  assert.equal(result.success, true);
+  assert.deepEqual(calls.slice(0, 2), ["remove", "load"]);
+});
+
+test("a quota-paused account does not prevent another account from completing", async () => {
+  const accounts = ["full@example.com", "ok@example.com"];
+  const results = await mapConcurrent(accounts, 2, (email) => processAccount(
+    { email, yandexPassword: "source", guzelPassword: "destination" },
+    { days: null, dryRun: false },
+    {
+      scanMailbox: async ({ server }) => ({
+        counts: [],
+        messages: server.name === "Yandex" ? [{
+          uid: 1,
+          folder: "INBOX",
+          folderKey: "\\inbox",
+          messageId: email,
+        }] : email === "ok@example.com" ? [{
+          uid: 2,
+          folder: "INBOX",
+          folderKey: "\\inbox",
+          messageId: email,
+        }] : [],
+      }),
+      runImapsync: async () => {
+        throw Object.assign(new Error("destination mailbox is full"), { code: "quota_exceeded" });
+      },
+    },
+  ));
+  assert.equal(results[0].status, "PAUSED_QUOTA");
+  assert.equal(results[1].status, "PASS");
+});
