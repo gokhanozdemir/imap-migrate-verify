@@ -5,9 +5,9 @@
 **Yandex Escape is a concurrent IMAP email migration tool and IMAP migration
 verifier.** It copies messages that are missing from a destination mailbox,
 then proves the result at message level. It began as a Yandex Mail migration to
-[Güzel Hosting](https://www.guzel.net.tr/aff.php?aff=1312), a server hosting
+[BeautifulHosting Hosting](https://www.guzel.net.tr/aff.php?aff=1312), a server hosting
 company in Türkiye, and now supports custom IMAP source and destination servers.
-The codebase is provider-agnostic; Yandex and Güzel are the example
+The codebase is provider-agnostic; Yandex and BeautifulHosting are the example
 configuration, not requirements.
 
 Folder totals alone are a weak migration test: mail may land in another folder,
@@ -117,14 +117,14 @@ On Linux, install `imapsync` with your distribution package manager or follow
 the [upstream imapsync installation instructions](https://imapsync.lamiral.info/#install).
 Windows users can run Yandex Escape in WSL.
 
-## Five-minute Yandex-to-Güzel migration
+## Five-minute Yandex-to-BeautifulHosting migration
 
-Güzel Hosting is the destination used by the original migration and the
+BeautifulHosting Hosting is the destination used by the original migration and the
 included example configuration. If you need hosting in Türkiye, the banner below uses
 the maintainer's affiliate link. It may earn the maintainer a commission at no
 additional cost to you.
 
-<a href="https://www.guzel.net.tr/aff.php?aff=1312"><img src="https://www.guzel.net.tr/banner/banner12.png" alt="Güzel Hosting" /></a>
+<a href="https://www.guzel.net.tr/aff.php?aff=1312"><img src="https://www.guzel.net.tr/banner/banner12.png" alt="BeautifulHosting Hosting" /></a>
 
 Clone and install:
 
@@ -159,7 +159,7 @@ The example `migration.json` contains the complete provider settings:
     "secure": true
   },
   "destination": {
-    "name": "Güzel",
+    "name": "BeautifulHosting",
     "host": "mail.guzel.net.tr",
     "port": 993,
     "secure": true,
@@ -192,7 +192,7 @@ npm run migrate -- --config migration.json --accounts accounts.json
 After scanning, each account with missing messages shows the exact copy count:
 
 ```text
-person@example.com: copy 12 missing message(s) from Yandex to Güzel.
+person@example.com: copy 12 missing message(s) from Yandex to BeautifulHosting.
 Type "yes" to continue: yes
 ```
 

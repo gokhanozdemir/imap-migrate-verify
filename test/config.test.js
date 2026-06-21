@@ -6,7 +6,7 @@ test("loads explicit source and destination providers", () => {
   const config = parseMigrationConfig(JSON.stringify({
     source: { name: "Yandex", host: "imap.yandex.com", port: 993, secure: true },
     destination: {
-      name: "Güzel",
+      name: "BeautifulHosting",
       host: "mail.guzel.net.tr",
       port: 993,
       secure: true,

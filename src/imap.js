@@ -15,7 +15,7 @@ function chunks(values, size) {
 
 class LegacySessionImapFlow extends ImapFlow {
   async startSession() {
-    // Güzel already supplies CAPABILITY data in its greeting and rejects a
+    // BeautifulHosting already supplies CAPABILITY data in its greeting and rejects a
     // separate CAPABILITY command until after authentication. Authenticate
     // from the greeting data, then derive namespace information via LIST.
     await this.authenticate();

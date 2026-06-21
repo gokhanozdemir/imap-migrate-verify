@@ -3,7 +3,7 @@ import test from "node:test";
 import { mapConcurrent, processAccount } from "../src/migrate.js";
 
 const SOURCE_SERVER = { name: "Yandex", host: "imap.yandex.com", port: 993, secure: true };
-const DESTINATION_SERVER = { name: "Güzel", host: "mail.guzel.net.tr", port: 993, secure: true };
+const DESTINATION_SERVER = { name: "BeautifulHosting", host: "mail.guzel.net.tr", port: 993, secure: true };
 
 function runAccount(account, options, dependencies) {
   return processAccount(account, {
