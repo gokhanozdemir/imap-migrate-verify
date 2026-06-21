@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mapConcurrent, processAccount } from "../src/migrate.js";
 
+const SOURCE_SERVER = { name: "Yandex", host: "imap.yandex.com", port: 993, secure: true };
+const DESTINATION_SERVER = { name: "Güzel", host: "mail.guzel.net.tr", port: 993, secure: true };
+
+function runAccount(account, options, dependencies) {
+  return processAccount(account, {
+    sourceServer: SOURCE_SERVER,
+    destinationServer: DESTINATION_SERVER,
+    ...options,
+  }, dependencies);
+}
+
 test("mapConcurrent preserves order and respects its limit", async () => {
   let active = 0;
   let maximum = 0;
@@ -47,7 +58,7 @@ test("processAccount repairs a missing message despite a higher destination coun
         : [sourceMessage],
     };
   };
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: 7, dryRun: false },
     {
@@ -88,7 +99,7 @@ test("processAccount retries a targeted UID when the first copy remains unresolv
       messages: destinationScans >= 3 ? [sourceMessage] : [],
     };
   };
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: 7, dryRun: false },
     {
@@ -124,7 +135,7 @@ test("processAccount does not copy a message already present in another folder",
     folderKey: "\\archive",
   };
   let syncCalls = 0;
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: 7, dryRun: false },
     {
@@ -152,7 +163,7 @@ test("processAccount splits thousands of missing UIDs into bounded sync batches"
   }));
   let destinationScans = 0;
   const syncBatches = [];
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: null, dryRun: false },
     {
@@ -198,7 +209,7 @@ test("pauses on quota and resumes only messages still missing from a partial bat
   };
   let firstDestinationScan = true;
   let firstSyncCalls = 0;
-  const first = await processAccount(
+  const first = await runAccount(
     { email: "person@example.com", yandexPassword: "source-secret", guzelPassword: "destination-secret" },
     { days: null, dryRun: false },
     {
@@ -231,7 +242,7 @@ test("pauses on quota and resumes only messages still missing from a partial bat
 
   let destinationScans = 0;
   const resumedBatches = [];
-  const resumed = await processAccount(
+  const resumed = await runAccount(
     { email: "person@example.com", yandexPassword: "source-secret", guzelPassword: "destination-secret" },
     { days: null, dryRun: false },
     {
@@ -286,7 +297,7 @@ test("discards a checkpoint when source UIDVALIDITY changes", async () => {
     remove: async () => { removals += 1; saved = null; },
   };
   let destinationScans = 0;
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: null, dryRun: false },
     {
@@ -314,7 +325,7 @@ test("discards a checkpoint when source UIDVALIDITY changes", async () => {
 
 test("dry runs never load, save, or remove checkpoints", async () => {
   const calls = [];
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: 7, dryRun: true, restart: true },
     {
@@ -337,7 +348,7 @@ test("restart discards saved progress before loading", async () => {
     load: async () => { calls.push("load"); return null; },
     save: async () => { calls.push("save"); },
   };
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: null, dryRun: false, restart: true },
     {
@@ -351,7 +362,7 @@ test("restart discards saved progress before loading", async () => {
 
 test("a quota-paused account does not prevent another account from completing", async () => {
   const accounts = ["full@example.com", "ok@example.com"];
-  const results = await mapConcurrent(accounts, 2, (email) => processAccount(
+  const results = await mapConcurrent(accounts, 2, (email) => runAccount(
     { email, yandexPassword: "source", guzelPassword: "destination" },
     { days: null, dryRun: false },
     {
@@ -380,7 +391,7 @@ test("a quota-paused account does not prevent another account from completing", 
 
 test("skips an account with a matching successful-sync record", async () => {
   let scans = 0;
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: null, dryRun: false },
     {
@@ -398,7 +409,7 @@ test("skips an account with a matching successful-sync record", async () => {
 
 test("restart still skips accounts that previously passed", async () => {
   const calls = [];
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: null, dryRun: false, restart: true },
     {
@@ -415,7 +426,7 @@ test("restart still skips accounts that previously passed", async () => {
 
 test("force removes a previous success record and performs a fresh scan", async () => {
   const calls = [];
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", sourcePassword: "source", destinationPassword: "destination" },
     { days: null, dryRun: false, force: true },
     {
@@ -446,7 +457,7 @@ test("previews a missing message and honors declined repair", async () => {
   };
   const plans = [];
   let copies = 0;
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", sourcePassword: "source", destinationPassword: "destination" },
     {
       days: null,
@@ -483,7 +494,7 @@ test("dry run reports missing messages without invoking imapsync", async () => {
   };
   let sourceScans = 0;
   let copies = 0;
-  const result = await processAccount(
+  const result = await runAccount(
     { email: "person@example.com", sourcePassword: "source", destinationPassword: "destination" },
     { days: null, dryRun: true },
     {

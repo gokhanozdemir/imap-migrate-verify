@@ -6,7 +6,7 @@
     "secure": true
   },
   "destination": {
-    "name": "Güzel",
+    "name": "BeautifulHosting",
     "host": "mail.guzel.net.tr",
     "port": 993,
     "secure": true,

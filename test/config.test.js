@@ -2,19 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { parseMigrationConfig } from "../src/config.js";
 
-test("resolves built-in presets and permits explicit overrides", () => {
+test("loads explicit source and destination providers", () => {
   const config = parseMigrationConfig(JSON.stringify({
-    source: { preset: "yandex", host: "imap.yandex.example" },
-    destination: "guzel",
+    source: { name: "Yandex", host: "imap.yandex.com", port: 993, secure: true },
+    destination: {
+      name: "Güzel",
+      host: "mail.guzel.net.tr",
+      port: 993,
+      secure: true,
+      legacyGreetingCapabilities: true,
+      loginMethod: "LOGIN",
+    },
   }));
-  assert.equal(config.source.name, "Yandex");
-  assert.equal(config.source.host, "imap.yandex.example");
+  assert.equal(config.source.host, "imap.yandex.com");
   assert.equal(config.destination.host, "mail.guzel.net.tr");
   assert.equal(config.destination.loginMethod, "LOGIN");
-
-  const defaults = parseMigrationConfig('{"source":"yandex","destination":"guzel"}');
-  assert.equal(defaults.source.host, "imap.yandex.com");
-  assert.equal(defaults.source.port, 993);
 });
 
 test("accepts custom IMAP providers", () => {
@@ -26,13 +28,16 @@ test("accepts custom IMAP providers", () => {
   assert.equal(config.destination.secure, false);
 });
 
-test("rejects unknown presets and unsafe provider shapes", () => {
+test("rejects missing or unsafe provider shapes", () => {
   assert.throws(
-    () => parseMigrationConfig('{"source":"unknown","destination":"guzel"}'),
-    /Unknown source preset/,
+    () => parseMigrationConfig('{"source":"yandex","destination":{}}'),
+    /source must be a provider object/,
   );
   assert.throws(
-    () => parseMigrationConfig('{"source":{"host":"old","port":0,"secure":true},"destination":"guzel"}'),
+    () => parseMigrationConfig(JSON.stringify({
+      source: { name: "Old", host: "old", port: 0, secure: true },
+      destination: { name: "New", host: "new", port: 993, secure: true },
+    })),
     /source.port/,
   );
 });
