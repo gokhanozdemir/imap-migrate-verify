@@ -50,7 +50,11 @@ test("processAccount repairs a missing message despite a higher destination coun
   const result = await processAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: 7, dryRun: false },
-    { scanMailbox, runImapsync: async () => { syncCalls += 1; } },
+    {
+      scanMailbox,
+      runImapsync: async () => { syncCalls += 1; },
+      getMailboxCount: async () => 103,
+    },
   );
   assert.equal(result.success, true);
   assert.equal(result.messages[0].status, "copied-and-verified");
@@ -87,7 +91,11 @@ test("processAccount retries a targeted UID when the first copy remains unresolv
   const result = await processAccount(
     { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
     { days: 7, dryRun: false },
-    { scanMailbox, runImapsync: async (options) => { syncOptions.push(options); } },
+    {
+      scanMailbox,
+      runImapsync: async (options) => { syncOptions.push(options); },
+      getMailboxCount: async () => 1,
+    },
   );
   assert.equal(result.success, true);
   assert.equal(result.messages[0].status, "copied-and-verified");
@@ -154,8 +162,13 @@ test("processAccount splits thousands of missing UIDs into bounded sync batches"
         return { counts: [], messages: destinationScans === 1 ? [] : sourceMessages };
       },
       runImapsync: async ({ uids }) => { syncBatches.push(uids); },
+      getMailboxCount: async () => 401,
     },
   );
   assert.equal(result.success, true);
   assert.deepEqual(syncBatches.map((batch) => batch.length), [200, 200, 1]);
+  assert.deepEqual(
+    result.inboxCounts.iterations.map((iteration) => iteration.guzel),
+    [401, 401, 401],
+  );
 });

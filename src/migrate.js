@@ -1,5 +1,5 @@
 import { DEFAULTS, DESTINATION_SERVER, SOURCE_SERVER } from "./config.js";
-import { scanMailbox, withTransientRetry } from "./imap.js";
+import { getMailboxCount, scanMailbox, withTransientRetry } from "./imap.js";
 import { runImapsync } from "./imapsync.js";
 import { finalizeMatches, matchInventories } from "./matcher.js";
 
@@ -32,6 +32,12 @@ function mergeCounts(source = [], before = [], after = []) {
   add(before, "destinationBefore");
   add(after, "destinationAfter");
   return [...rows.values()].sort((a, b) => a.folder.localeCompare(b.folder));
+}
+
+function inboxCount(counts = []) {
+  return counts.find((item) => item.folderKey === "\\inbox")?.messages
+    ?? counts.find((item) => item.folder.toLowerCase() === "inbox")?.messages
+    ?? 0;
 }
 
 function reportMessages(matches) {
@@ -73,6 +79,7 @@ function missingByFolder(matches) {
 export async function processAccount(account, options, dependencies = {}) {
   const scan = dependencies.scanMailbox ?? scanMailbox;
   const sync = dependencies.runImapsync ?? runImapsync;
+  const readInboxCount = dependencies.getMailboxCount ?? getMailboxCount;
   const log = options.log ?? (() => {});
   const sourceSince = cutoffDate(options.days);
   const destinationSince = options.days === null || options.days === undefined
@@ -85,6 +92,7 @@ export async function processAccount(account, options, dependencies = {}) {
     success: false,
     durationMs: 0,
     counts: [],
+    inboxCounts: { before: null, iterations: [], after: null },
     messages: [],
   };
 
@@ -95,6 +103,9 @@ export async function processAccount(account, options, dependencies = {}) {
   try {
     log(account.email, "Reading Yandex and Guzel inventories");
     const progress = (provider) => (event) => {
+      if (event.phase === "metadata") {
+        log(account.email, `${provider}: ${event.folder} metadata ${event.processed}/${event.total}`);
+      }
       if (event.phase === "hydrate") {
         log(account.email, `${provider}: fingerprinting ${event.messages} ambiguous message(s) in ${event.folder}`);
       }
@@ -117,6 +128,10 @@ export async function processAccount(account, options, dependencies = {}) {
     ]);
 
     const beforeMatches = matchInventories(sourceInventory.messages, destinationBefore.messages);
+    const sourceInbox = inboxCount(sourceInventory.counts);
+    const destinationInboxBefore = inboxCount(destinationBefore.counts);
+    result.inboxCounts.before = { yandex: sourceInbox, guzel: destinationInboxBefore };
+    log(account.email, `Inbox totals before: Yandex=${sourceInbox}, Guzel=${destinationInboxBefore}`);
     const missingBefore = beforeMatches.filter((item) => item.status === "missing").length;
     const elsewhereBefore = beforeMatches.filter((item) => item.status === "present-in-other-folder").length;
     log(
@@ -125,6 +140,9 @@ export async function processAccount(account, options, dependencies = {}) {
     );
 
     const missingFolders = missingByFolder(beforeMatches);
+    const totalSyncBatches = [...missingFolders.values()]
+      .reduce((total, uids) => total + Math.ceil(uids.length / SYNC_BATCH_SIZE), 0);
+    let completedSyncBatches = 0;
     for (const [folder, uids] of missingFolders) {
       for (const [batchIndex, uidBatch] of chunks(uids).entries()) {
         log(
@@ -142,6 +160,24 @@ export async function processAccount(account, options, dependencies = {}) {
           signal: options.signal,
           onRetry: () => log(account.email, "Transient imapsync failure; retrying once"),
         });
+        completedSyncBatches += 1;
+        const guzelInbox = await withTransientRetry(() => readInboxCount({
+          server: DESTINATION_SERVER,
+          email: account.email,
+          password: account.guzelPassword,
+        }), retryOptions);
+        result.inboxCounts.iterations.push({
+          iteration: completedSyncBatches,
+          totalIterations: totalSyncBatches,
+          folder,
+          yandex: sourceInbox,
+          guzel: guzelInbox,
+        });
+        log(
+          account.email,
+          `Inbox totals after batch ${completedSyncBatches}/${totalSyncBatches}: `
+          + `Yandex=${sourceInbox}, Guzel=${guzelInbox}`,
+        );
       }
     }
 
@@ -190,6 +226,9 @@ export async function processAccount(account, options, dependencies = {}) {
       destinationBefore.counts,
       destinationAfter.counts,
     );
+    const destinationInboxAfter = inboxCount(destinationAfter.counts);
+    result.inboxCounts.after = { yandex: sourceInbox, guzel: destinationInboxAfter };
+    log(account.email, `Inbox totals after: Yandex=${sourceInbox}, Guzel=${destinationInboxAfter}`);
     const unresolved = finalMatches.filter((item) => item.status === "unresolved").length;
     result.success = unresolved === 0;
     if (options.dryRun && missingBefore) {

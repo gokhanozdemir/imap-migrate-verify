@@ -22,6 +22,24 @@ export function renderTextReport(report) {
   for (const account of report.accounts) {
     lines.push(`ACCOUNT ${account.email}`, `Result: ${account.success ? "PASS" : "FAIL"}`);
     if (account.error) lines.push(`Error: ${printable(account.error)}`);
+    if (account.inboxCounts?.before) {
+      lines.push(
+        `Inbox totals before: Yandex=${account.inboxCounts.before.yandex}, `
+        + `Guzel=${account.inboxCounts.before.guzel}`,
+      );
+    }
+    for (const iteration of account.inboxCounts?.iterations ?? []) {
+      lines.push(
+        `Inbox totals after batch ${iteration.iteration}/${iteration.totalIterations}: `
+        + `Yandex=${iteration.yandex}, Guzel=${iteration.guzel}`,
+      );
+    }
+    if (account.inboxCounts?.after) {
+      lines.push(
+        `Inbox totals after: Yandex=${account.inboxCounts.after.yandex}, `
+        + `Guzel=${account.inboxCounts.after.guzel}`,
+      );
+    }
     lines.push("Folder counts are informational only:");
     for (const count of account.counts ?? []) {
       lines.push(

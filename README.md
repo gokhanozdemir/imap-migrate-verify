@@ -64,5 +64,10 @@ Large mailboxes are processed in bounded UID batches: metadata in groups of
 250, full ambiguous-message bodies in groups of 25, and imapsync repair jobs in
 groups of 200. Consecutive UIDs are compacted into ranges.
 
+The console and reports show Yandex and Güzel Inbox totals before migration,
+after every repair batch, and after final verification. Folder metadata progress
+is printed while large mailboxes are being inventoried. At completion, the CLI
+prints boxed Inbox-timeline and verification-summary tables.
+
 Reports are written as permission-`0600` JSON and text files. A run passes only
 when no recent source message remains unresolved.

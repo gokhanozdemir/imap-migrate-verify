@@ -107,6 +107,7 @@ export async function scanMailbox({
         onProgress({ phase: "folder", folder: folder.path, recent: uids.length });
         if (!uids.length) continue;
 
+        let processedInFolder = 0;
         for (const uidBatch of chunks(uids, METADATA_BATCH_SIZE)) {
           for await (const item of client.fetch(
             uidBatch,
@@ -132,6 +133,13 @@ export async function scanMailbox({
               sentAt: item.envelope?.date?.toISOString?.() ?? null,
             });
           }
+          processedInFolder += uidBatch.length;
+          onProgress({
+            phase: "metadata",
+            folder: folder.path,
+            processed: Math.min(processedInFolder, uids.length),
+            total: uids.length,
+          });
         }
       } finally {
         lock?.release();
@@ -186,6 +194,20 @@ export async function scanMailbox({
     }
 
     return { counts, messages };
+  } catch (error) {
+    error.serverName = server.name;
+    throw error;
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
+export async function getMailboxCount({ server, email, password, folder = "INBOX" }) {
+  const client = createClient(server, email, password);
+  try {
+    await client.connect();
+    const status = await client.status(folder, { messages: true });
+    return status?.messages ?? 0;
   } catch (error) {
     error.serverName = server.name;
     throw error;

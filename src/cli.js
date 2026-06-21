@@ -6,6 +6,7 @@ import { DEFAULTS } from "./config.js";
 import { checkImapsync } from "./imapsync.js";
 import { mapConcurrent, processAccount } from "./migrate.js";
 import { writeReports } from "./report.js";
+import { inboxTimelineRows, renderTable, summaryRows } from "./table.js";
 
 const HELP = `Usage: npm run migrate -- <accounts-file> [options]
 
@@ -89,6 +90,25 @@ async function main() {
     success: accountResults.every((account) => account.success),
     accounts: accountResults,
   };
+  const inboxRows = inboxTimelineRows(accountResults);
+  if (inboxRows.length) {
+    process.stdout.write(`\nInbox totals\n${renderTable([
+      { key: "account", label: "Account" },
+      { key: "stage", label: "Stage" },
+      { key: "folder", label: "Folder" },
+      { key: "yandex", label: "Yandex", align: "right" },
+      { key: "guzel", label: "Güzel", align: "right" },
+    ], inboxRows)}\n`);
+  }
+  process.stdout.write(`\nVerification summary\n${renderTable([
+    { key: "account", label: "Account" },
+    { key: "result", label: "Result" },
+    { key: "checked", label: "Checked", align: "right" },
+    { key: "copied", label: "Copied", align: "right" },
+    { key: "elsewhere", label: "Elsewhere", align: "right" },
+    { key: "unresolved", label: "Unresolved", align: "right" },
+    { key: "seconds", label: "Seconds", align: "right" },
+  ], summaryRows(accountResults))}\n`);
   const paths = await writeReports(report, options.reportDir);
   process.stdout.write(`Reports:\n  ${paths.textPath}\n  ${paths.jsonPath}\n`);
   process.stdout.write(`Overall: ${report.success ? "PASS" : "FAIL"}\n`);
