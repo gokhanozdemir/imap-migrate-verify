@@ -21,6 +21,19 @@ and rescans the destination before reporting **PASS** or **FAIL**.
 > Start with `--dry-run`, review the proposed work, and keep account files and
 > reports private. It never deletes, moves, or overwrites source messages.
 
+## Index
+
+- [Why Yandex Escape exists](#why-yandex-escape-exists)
+- [Why use it?](#why-use-it)
+- [How the migration works](#how-the-migration-works)
+- [Quick start](#quick-start)
+- [Custom IMAP providers](#custom-imap-providers)
+- [Options](#options)
+- [Reports and expected results](#reports-and-expected-results)
+- [Failure recovery](#failure-recovery)
+- [Troubleshooting](#troubleshooting)
+- [Development and security](#development-and-security)
+
 ## Why Yandex Escape exists
 
 > **Your old mailbox is still readable. Make sure it is also portable—and prove
@@ -37,11 +50,7 @@ should not assume IMAP access will remain available indefinitely in every
 account state or region.
 
 As checked in June 2026, Yandex's international list prices are examples of the
-new ongoing cost:
-
-- Basic: **$3.99 per user/month**
-- Optimal: **$6.49 per user/month**
-- Advanced: **$16.99 per user/month**
+new ongoing cost starts from **$3.99 per user/month** - Basic.
 
 Plan names, prices, taxes, currencies, eligibility, and transition dates vary
 by billing region. Yandex's
@@ -122,43 +131,27 @@ flowchart TB
     G --> D
 ```
 
-## Requirements
+## Quick start
 
-- Node.js 20 or newer
-- `imapsync` for real migrations (a dry run only scans with IMAP)
-- IMAP enabled on both providers
-- An application password when a provider requires one
+You need Node.js 20+, IMAP access on both providers, and `imapsync` for a real
+migration. A dry run does not require `imapsync`. Install it with
+`brew install imapsync` on macOS, your package manager on Linux, or use WSL on
+Windows.
 
-On macOS:
-
-```sh
-brew install imapsync
-```
-
-On Linux, install `imapsync` with your distribution package manager or follow
-the [upstream imapsync installation instructions](https://imapsync.lamiral.info/#install).
-Windows users can run Yandex Escape in WSL.
-
-## Five-minute Yandex-to-BeautifulHosting migration
-
-BeautifulHosting Hosting is the destination used by the original migration and the
-included example configuration. If you need hosting in Türkiye, the banner below uses
-the maintainer's affiliate link. It may earn the maintainer a commission at no
-additional cost to you.
-
-<a href="https://www.guzel.net.tr/aff.php?aff=1312"><img src="https://www.guzel.net.tr/banner/banner12.png" alt="BeautifulHosting Hosting" /></a>
-
-Clone and install:
+1. Clone the project and create local configuration files:
 
 ```sh
-git clone https://github.com/gokhanozdemir/email-migration-verify.git
-cd email-migration-verify
+git clone https://github.com/gokhanozdemir/imap-migrate-verify.git
+cd imap-migrate-verify
 npm ci
 cp migration.example.json migration.json
 cp accounts.example.json accounts.json
 ```
 
-Edit `accounts.json` with one object per mailbox:
+2. Edit `migration.json` with the source and destination IMAP settings. The
+   included example is preconfigured for Yandex and BeautifulHosting.
+
+3. Add each mailbox and its passwords to `accounts.json`:
 
 ```json
 [
@@ -170,42 +163,14 @@ Edit `accounts.json` with one object per mailbox:
 ]
 ```
 
-The example `migration.json` contains the complete provider settings:
-
-```json
-{
-  "source": {
-    "name": "Yandex",
-    "host": "imap.yandex.com",
-    "port": 993,
-    "secure": true
-  },
-  "destination": {
-    "name": "BeautifulHosting",
-    "host": "mail.guzel.net.tr",
-    "port": 993,
-    "secure": true,
-    "legacyGreetingCapabilities": true,
-    "loginMethod": "LOGIN"
-  }
-}
-```
-
-For Yandex 360 for Business, enable IMAP, authenticate with the full email
-address, and create a Mail application password. Yandex's current documented
-incoming settings are `imap.yandex.com`, SSL, port `993`; see the
-[official Yandex IMAP instructions](https://yandex.com/support/yandex-360/business/mail/en/mail-clients/others).
-If a regional or legacy account uses another endpoint, change `source.host` in
-`migration.json`.
-
-Protect the credentials file, then audit without copying:
+4. Protect the credentials and preview the migration without copying anything:
 
 ```sh
 chmod 600 accounts.json
 npm run migrate -- --config migration.json --accounts accounts.json --dry-run
 ```
 
-Run the migration:
+5. Review the result, then run the migration:
 
 ```sh
 npm run migrate -- --config migration.json --accounts accounts.json
@@ -218,11 +183,20 @@ person@example.com: copy 12 missing message(s) from Yandex to BeautifulHosting.
 Type "yes" to continue: yes
 ```
 
-Automation may pass `--yes`. Do this only after reviewing a dry run:
+For unattended execution after a reviewed dry run, add `--yes`:
 
 ```sh
 npm run migrate -- --config migration.json --accounts accounts.json --yes
 ```
+
+For Yandex 360 for Business, enable IMAP and create a Mail application password.
+Use the full email address as the username. Yandex documents
+`imap.yandex.com`, SSL, and port `993` in its
+[official IMAP instructions](https://yandex.com/support/yandex-360/business/mail/en/mail-clients/others).
+
+BeautifulHosting is the destination in the example configuration. The
+[maintainer's affiliate link](https://www.guzel.net.tr/aff.php?aff=1312) may
+earn a commission at no extra cost to you.
 
 ## Custom IMAP providers
 
@@ -316,26 +290,11 @@ Checkpoints contain message metadata and UIDs, never passwords or message
 bodies. Passwords are passed to `imapsync` through temporary permission-`0600`
 files and are removed afterward.
 
-For broader migration planning, Yandex's own
-[IMAP migration documentation](https://yandex.ru/support/yandex-360/business/admin/en/migration/mail/exchange)
-shows why retaining logs matters when multiple runs or partial failures occur.
 
-## Migrating from the old text account format
-
-The old format remains readable for one compatibility release:
-
-```text
-email:yandex-password:guzel-password
-```
-
-Move each row into `accounts.json` as `email`, `sourcePassword`, and
-`destinationPassword`. JSON supports passwords containing colons and gives
-clear provider-neutral field names. Do not commit either format.
 
 ## Troubleshooting
 
-- **Authentication failed:** verify the username, enable IMAP, and create an app
-  password if normal account passwords are rejected.
+- **Authentication failed to Yandex:** verify the username, enable IMAP, and create an **[app password](https://id.yandex.com.tr/security/app-passwords)** because your Yandex portal login passwords WILL BE REJECTED. (web login account passwords are rejected). 
 - **`imapsync` is not installed:** install it before a real migration; dry runs
   do not need it.
 - **Connection or TLS timeout:** confirm the hostname, port, firewall, and
