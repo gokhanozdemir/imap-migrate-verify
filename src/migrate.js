@@ -1,4 +1,4 @@
-import { DEFAULTS, DESTINATION_SERVER, SOURCE_SERVER } from "./config.js";
+import { DEFAULTS } from "./config.js";
 import { createCheckpointStore } from "./checkpoint.js";
 import { getMailboxCount, scanMailbox, withTransientRetry } from "./imap.js";
 import { runImapsync } from "./imapsync.js";
@@ -63,20 +63,25 @@ function redactError(error, account) {
   const output = String(error?.output ?? "").slice(-2_000);
   let message = `${server}${kind}${response ? `: ${response}` : ""}${status ? ` (${status})` : ""}`
     + `${output ? `: ${output}` : ""}`;
-  for (const secret of [account.yandexPassword, account.guzelPassword]) {
+  for (const secret of [
+    account.sourcePassword,
+    account.destinationPassword,
+    account.yandexPassword,
+    account.guzelPassword,
+  ]) {
     if (secret) message = message.split(secret).join("[REDACTED]");
   }
   return message.replace(/[\r\n\t]+/gu, " ").trim();
 }
 
-function migrationIdentity(account, options) {
+function migrationIdentity(account, options, sourceServer, destinationServer) {
   return {
     email: account.email,
-    source: { host: SOURCE_SERVER.host, port: SOURCE_SERVER.port, secure: SOURCE_SERVER.secure },
+    source: { host: sourceServer.host, port: sourceServer.port, secure: sourceServer.secure },
     destination: {
-      host: DESTINATION_SERVER.host,
-      port: DESTINATION_SERVER.port,
-      secure: DESTINATION_SERVER.secure,
+      host: destinationServer.host,
+      port: destinationServer.port,
+      secure: destinationServer.secure,
     },
     days: options.days ?? null,
     destinationLookbackBufferDays: DEFAULTS.destinationLookbackBufferDays,
@@ -113,6 +118,12 @@ export async function processAccount(account, options, dependencies = {}) {
   const sync = dependencies.runImapsync ?? runImapsync;
   const readInboxCount = dependencies.getMailboxCount ?? getMailboxCount;
   const log = options.log ?? (() => {});
+  const { sourceServer, destinationServer } = options;
+  if (!sourceServer || !destinationServer) {
+    throw new Error("sourceServer and destinationServer are required");
+  }
+  const sourcePassword = account.sourcePassword ?? account.yandexPassword;
+  const destinationPassword = account.destinationPassword ?? account.guzelPassword;
   const freshSourceSince = cutoffDate(options.days);
   const freshDestinationSince = options.days === null || options.days === undefined
     ? null
@@ -120,7 +131,7 @@ export async function processAccount(account, options, dependencies = {}) {
   let sourceSince = freshSourceSince;
   let destinationSince = freshDestinationSince;
   const started = Date.now();
-  const identity = migrationIdentity(account, options);
+  const identity = migrationIdentity(account, options, sourceServer, destinationServer);
   const checkpointStore = options.dryRun
     ? null
     : dependencies.checkpointStore
@@ -141,19 +152,16 @@ export async function processAccount(account, options, dependencies = {}) {
   };
 
   try {
-    if (options.restart) {
-      await checkpointStore?.remove();
-      await checkpointStore?.removeSuccess?.();
-    } else {
-      const successfulSync = await checkpointStore?.loadSuccess?.();
-      if (successfulSync) {
-        result.success = true;
-        result.status = "SKIPPED_ALREADY_SYNCED";
-        result.lastSuccessfulSyncAt = successfulSync.lastSuccessfulSyncAt;
-        log(account.email, `Already synchronized successfully at ${successfulSync.lastSuccessfulSyncAt}; skipping`);
-        return result;
-      }
+    if (options.force) await checkpointStore?.removeSuccess?.();
+    const successfulSync = await checkpointStore?.loadSuccess?.();
+    if (successfulSync) {
+      result.success = true;
+      result.status = "SKIPPED_ALREADY_SYNCED";
+      result.lastSuccessfulSyncAt = successfulSync.lastSuccessfulSyncAt;
+      log(account.email, `Already synchronized successfully at ${successfulSync.lastSuccessfulSyncAt}; skipping`);
+      return result;
     }
+    if (options.restart) await checkpointStore?.remove();
     let checkpoint = await checkpointStore?.load() ?? null;
     if (checkpoint) {
       sourceSince = checkpoint.auditWindow.sourceSince
@@ -163,7 +171,9 @@ export async function processAccount(account, options, dependencies = {}) {
         ? new Date(checkpoint.auditWindow.destinationSince)
         : null;
     }
-    log(account.email, checkpoint ? "Validating saved migration checkpoint" : "Reading Yandex and Guzel inventories");
+    log(account.email, checkpoint
+      ? "Validating saved migration checkpoint"
+      : `Reading ${sourceServer.name} and ${destinationServer.name} inventories`);
     const progress = (provider) => (event) => {
       if (event.phase === "metadata") {
         log(account.email, `${provider}: ${event.folder} metadata ${event.processed}/${event.total}`);
@@ -174,9 +184,9 @@ export async function processAccount(account, options, dependencies = {}) {
     };
     if (checkpoint) {
       const sourceState = await withTransientRetry(() => scan({
-        server: SOURCE_SERVER,
+        server: sourceServer,
         email: account.email,
-        password: account.yandexPassword,
+        password: sourcePassword,
         since: sourceSince,
         includeMessages: false,
       }), retryOptions);
@@ -196,28 +206,28 @@ export async function processAccount(account, options, dependencies = {}) {
       sourceInventory = checkpoint.sourceInventory;
       destinationBefore = checkpoint.destinationBefore;
       workDestination = await withTransientRetry(() => scan({
-        server: DESTINATION_SERVER,
+        server: destinationServer,
         email: account.email,
-        password: account.guzelPassword,
+        password: destinationPassword,
         since: destinationSince,
-        onProgress: progress("Guzel"),
+        onProgress: progress(destinationServer.name),
       }), retryOptions);
       log(account.email, "Resuming saved migration after reconciling the destination");
     } else {
       [sourceInventory, destinationBefore] = await Promise.all([
         withTransientRetry(() => scan({
-          server: SOURCE_SERVER,
+          server: sourceServer,
           email: account.email,
-          password: account.yandexPassword,
+          password: sourcePassword,
           since: sourceSince,
-          onProgress: progress("Yandex"),
+          onProgress: progress(sourceServer.name),
         }), retryOptions),
         withTransientRetry(() => scan({
-          server: DESTINATION_SERVER,
+          server: destinationServer,
           email: account.email,
-          password: account.guzelPassword,
+          password: destinationPassword,
           since: destinationSince,
-          onProgress: progress("Guzel"),
+          onProgress: progress(destinationServer.name),
         }), retryOptions),
       ]);
       workDestination = destinationBefore;
@@ -228,13 +238,30 @@ export async function processAccount(account, options, dependencies = {}) {
     const destinationInboxBefore = inboxCount(destinationBefore.counts);
     result.inboxCounts = checkpoint?.inboxCounts ?? result.inboxCounts;
     result.inboxCounts.before ??= { yandex: sourceInbox, guzel: destinationInboxBefore };
-    log(account.email, `Inbox totals before: Yandex=${sourceInbox}, Guzel=${destinationInboxBefore}`);
+    log(account.email, `Inbox totals before: ${sourceServer.name}=${sourceInbox}, ${destinationServer.name}=${destinationInboxBefore}`);
     const missingBefore = beforeMatches.filter((item) => item.status === "missing").length;
     const elsewhereBefore = beforeMatches.filter((item) => item.status === "present-in-other-folder").length;
     log(
       account.email,
-      `${sourceInventory.messages.length} recent Yandex message(s): ${missingBefore} missing, ${elsewhereBefore} in other folders`,
+      `${sourceInventory.messages.length} source message(s): ${missingBefore} missing, ${elsewhereBefore} in other folders`,
     );
+
+    if (missingBefore && !options.dryRun && options.confirmRepair) {
+      const approved = await options.confirmRepair({
+        email: account.email,
+        missing: missingBefore,
+        sourceServer,
+        destinationServer,
+      });
+      if (!approved) {
+        result.status = "DECLINED";
+        result.error = `Migration declined with ${missingBefore} missing message(s)`;
+        result.messages = reportMessages(finalizeMatches(beforeMatches, beforeMatches));
+        result.counts = mergeCounts(sourceInventory.counts, destinationBefore.counts, destinationBefore.counts);
+        result.inboxCounts.after = { yandex: sourceInbox, guzel: destinationInboxBefore };
+        return result;
+      }
+    }
 
     let pendingBatches;
     let totalSyncBatches;
@@ -273,7 +300,7 @@ export async function processAccount(account, options, dependencies = {}) {
     });
     await saveCheckpoint();
 
-    while (pendingBatches.length) {
+    while (pendingBatches.length && !options.dryRun) {
       const { folder, uids: uidBatch } = pendingBatches[0];
       log(
         account.email,
@@ -282,8 +309,8 @@ export async function processAccount(account, options, dependencies = {}) {
       );
       await sync({
         account,
-        sourceServer: SOURCE_SERVER,
-        destinationServer: DESTINATION_SERVER,
+        sourceServer,
+        destinationServer,
         dryRun: options.dryRun,
         folder,
         uids: uidBatch,
@@ -294,9 +321,9 @@ export async function processAccount(account, options, dependencies = {}) {
       completedSyncBatches += 1;
       await saveCheckpoint();
       const guzelInbox = await withTransientRetry(() => readInboxCount({
-        server: DESTINATION_SERVER,
+        server: destinationServer,
         email: account.email,
-        password: account.guzelPassword,
+        password: destinationPassword,
       }), retryOptions);
       result.inboxCounts.iterations.push({
         iteration: completedSyncBatches,
@@ -309,16 +336,16 @@ export async function processAccount(account, options, dependencies = {}) {
       log(
         account.email,
         `Inbox totals after batch ${completedSyncBatches}/${totalSyncBatches}: `
-        + `Yandex=${sourceInbox}, Guzel=${guzelInbox}`,
+        + `${sourceServer.name}=${sourceInbox}, ${destinationServer.name}=${guzelInbox}`,
       );
     }
 
     let destinationAfter = await withTransientRetry(() => scan({
-      server: DESTINATION_SERVER,
+      server: destinationServer,
       email: account.email,
-      password: account.guzelPassword,
+      password: destinationPassword,
       since: destinationSince,
-      onProgress: progress("Guzel"),
+      onProgress: progress(destinationServer.name),
     }), retryOptions);
     let afterMatches = matchInventories(sourceInventory.messages, destinationAfter.messages);
 
@@ -332,8 +359,8 @@ export async function processAccount(account, options, dependencies = {}) {
           await saveCheckpoint();
           await sync({
             account,
-            sourceServer: SOURCE_SERVER,
-            destinationServer: DESTINATION_SERVER,
+            sourceServer,
+            destinationServer,
             dryRun: false,
             folder,
             uids: uidBatch,
@@ -347,11 +374,11 @@ export async function processAccount(account, options, dependencies = {}) {
       }
       if (retryFolders.size) {
         destinationAfter = await withTransientRetry(() => scan({
-          server: DESTINATION_SERVER,
+          server: destinationServer,
           email: account.email,
-          password: account.guzelPassword,
+          password: destinationPassword,
           since: destinationSince,
-          onProgress: progress("Guzel"),
+          onProgress: progress(destinationServer.name),
         }), retryOptions);
         afterMatches = matchInventories(sourceInventory.messages, destinationAfter.messages);
       }
@@ -366,7 +393,7 @@ export async function processAccount(account, options, dependencies = {}) {
     );
     const destinationInboxAfter = inboxCount(destinationAfter.counts);
     result.inboxCounts.after = { yandex: sourceInbox, guzel: destinationInboxAfter };
-    log(account.email, `Inbox totals after: Yandex=${sourceInbox}, Guzel=${destinationInboxAfter}`);
+    log(account.email, `Inbox totals after: ${sourceServer.name}=${sourceInbox}, ${destinationServer.name}=${destinationInboxAfter}`);
     const unresolved = finalMatches.filter((item) => item.status === "unresolved").length;
     result.success = unresolved === 0;
     if (options.dryRun && missingBefore) {

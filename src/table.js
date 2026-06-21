@@ -64,11 +64,15 @@ export function inboxTimelineRows(accounts) {
 
 export function summaryRows(accounts) {
   return accounts.map((account) => {
-    const statuses = Object.groupBy(account.messages ?? [], (message) => message.status);
+    const statuses = {};
+    for (const message of account.messages ?? []) {
+      (statuses[message.status] ??= []).push(message);
+    }
     return {
       account: account.email,
       result: account.status === "PAUSED_QUOTA"
         ? "PAUSED (QUOTA)"
+        : account.status === "DECLINED" ? "DECLINED"
         : account.status === "SKIPPED_ALREADY_SYNCED" ? "SKIPPED (SYNCED)" : account.success ? "PASS" : "FAIL",
       checked: account.messages?.length ?? 0,
       copied: statuses["copied-and-verified"]?.length ?? 0,

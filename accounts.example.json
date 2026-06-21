@@ -1,0 +1,12 @@
+[
+  {
+    "email": "person@example.com",
+    "sourcePassword": "source-app-password",
+    "destinationPassword": "destination-password"
+  },
+  {
+    "email": "second.person@example.com",
+    "sourcePassword": "another-source-app-password",
+    "destinationPassword": "another-destination-password"
+  }
+]

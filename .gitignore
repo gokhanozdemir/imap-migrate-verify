@@ -3,6 +3,9 @@ reports/
 *-reports/
 private/
 accounts*.txt
+accounts*.json
+!accounts.example.json
+migration.json
 *.credentials.*
 *.secret.*
 .env

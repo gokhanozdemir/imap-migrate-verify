@@ -10,6 +10,8 @@ function printable(value) {
 }
 
 export function renderTextReport(report) {
+  const source = printable(report.source || "Source");
+  const destination = printable(report.destination || "Destination");
   const lines = [
     "IMAP migration verification report",
     `Started: ${report.startedAt}`,
@@ -33,27 +35,28 @@ export function renderTextReport(report) {
     }
     if (account.inboxCounts?.before) {
       lines.push(
-        `Inbox totals before: Yandex=${account.inboxCounts.before.yandex}, `
-        + `Guzel=${account.inboxCounts.before.guzel}`,
+        `Inbox totals before: ${source}=${account.inboxCounts.before.yandex}, `
+        + `${destination}=${account.inboxCounts.before.guzel}`,
       );
     }
     for (const iteration of account.inboxCounts?.iterations ?? []) {
       lines.push(
         `Inbox totals after batch ${iteration.iteration}/${iteration.totalIterations}: `
-        + `Yandex=${iteration.yandex}, Guzel=${iteration.guzel}`,
+        + `${source}=${iteration.yandex}, ${destination}=${iteration.guzel}`,
       );
     }
     if (account.inboxCounts?.after) {
       lines.push(
-        `Inbox totals after: Yandex=${account.inboxCounts.after.yandex}, `
-        + `Guzel=${account.inboxCounts.after.guzel}`,
+        `Inbox totals after: ${source}=${account.inboxCounts.after.yandex}, `
+        + `${destination}=${account.inboxCounts.after.guzel}`,
       );
     }
     lines.push("Folder counts are informational only:");
     for (const count of account.counts ?? []) {
       lines.push(
-        `  ${printable(count.folder)}: Yandex=${count.source ?? "-"}, `
-        + `Guzel before=${count.destinationBefore ?? "-"}, Guzel after=${count.destinationAfter ?? "-"}`,
+        `  ${printable(count.folder)}: ${source}=${count.source ?? "-"}, `
+        + `${destination} before=${count.destinationBefore ?? "-"}, `
+        + `${destination} after=${count.destinationAfter ?? "-"}`,
       );
     }
     lines.push("Recent source messages:");

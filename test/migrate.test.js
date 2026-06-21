@@ -395,3 +395,110 @@ test("skips an account with a matching successful-sync record", async () => {
   assert.equal(result.lastSuccessfulSyncAt, "2026-06-21T10:00:00.000Z");
   assert.equal(scans, 0);
 });
+
+test("restart still skips accounts that previously passed", async () => {
+  const calls = [];
+  const result = await processAccount(
+    { email: "person@example.com", yandexPassword: "source", guzelPassword: "destination" },
+    { days: null, dryRun: false, restart: true },
+    {
+      checkpointStore: {
+        loadSuccess: async () => ({ lastSuccessfulSyncAt: "2026-06-21T10:00:00.000Z" }),
+        remove: async () => { calls.push("remove"); },
+        removeSuccess: async () => { calls.push("removeSuccess"); },
+      },
+    },
+  );
+  assert.equal(result.status, "SKIPPED_ALREADY_SYNCED");
+  assert.deepEqual(calls, []);
+});
+
+test("force removes a previous success record and performs a fresh scan", async () => {
+  const calls = [];
+  const result = await processAccount(
+    { email: "person@example.com", sourcePassword: "source", destinationPassword: "destination" },
+    { days: null, dryRun: false, force: true },
+    {
+      checkpointStore: {
+        removeSuccess: async () => { calls.push("removeSuccess"); },
+        loadSuccess: async () => null,
+        load: async () => null,
+        save: async () => {},
+        saveSuccess: async () => ({ lastSuccessfulSyncAt: "2026-06-21T12:00:00.000Z" }),
+        remove: async () => {},
+      },
+      scanMailbox: async () => { calls.push("scan"); return { counts: [], messages: [] }; },
+    },
+  );
+  assert.equal(result.status, "PASS");
+  assert.equal(calls[0], "removeSuccess");
+  assert.equal(calls.filter((value) => value === "scan").length, 3);
+});
+
+test("previews a missing message and honors declined repair", async () => {
+  const sourceServer = { name: "Old", host: "old.example", port: 993, secure: true };
+  const destinationServer = { name: "New", host: "new.example", port: 993, secure: true };
+  const sourceMessage = {
+    uid: 7,
+    folder: "INBOX",
+    folderKey: "\\inbox",
+    messageId: "message@example.com",
+  };
+  const plans = [];
+  let copies = 0;
+  const result = await processAccount(
+    { email: "person@example.com", sourcePassword: "source", destinationPassword: "destination" },
+    {
+      days: null,
+      dryRun: false,
+      sourceServer,
+      destinationServer,
+      confirmRepair: async (plan) => { plans.push(plan); return false; },
+    },
+    {
+      scanMailbox: async ({ server, password }) => {
+        if (server === sourceServer) {
+          assert.equal(password, "source");
+          return { counts: [], messages: [sourceMessage] };
+        }
+        assert.equal(password, "destination");
+        return { counts: [], messages: [] };
+      },
+      runImapsync: async () => { copies += 1; },
+    },
+  );
+  assert.equal(result.status, "DECLINED");
+  assert.equal(result.success, false);
+  assert.equal(plans[0].missing, 1);
+  assert.equal(plans[0].sourceServer, sourceServer);
+  assert.equal(copies, 0);
+});
+
+test("dry run reports missing messages without invoking imapsync", async () => {
+  const sourceMessage = {
+    uid: 9,
+    folder: "INBOX",
+    folderKey: "\\inbox",
+    messageId: "dry-run@example.com",
+  };
+  let sourceScans = 0;
+  let copies = 0;
+  const result = await processAccount(
+    { email: "person@example.com", sourcePassword: "source", destinationPassword: "destination" },
+    { days: null, dryRun: true },
+    {
+      scanMailbox: async ({ server }) => {
+        if (server.name === "Yandex") {
+          sourceScans += 1;
+          return { counts: [], messages: [sourceMessage] };
+        }
+        return { counts: [], messages: [] };
+      },
+      runImapsync: async () => { copies += 1; },
+    },
+  );
+  assert.equal(result.status, "FAILED");
+  assert.match(result.error, /Dry run found 1 message/);
+  assert.equal(sourceScans, 1);
+  assert.equal(copies, 0);
+});

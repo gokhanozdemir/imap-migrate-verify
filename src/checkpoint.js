@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 export const CHECKPOINT_VERSION = 1;
@@ -29,9 +29,32 @@ function checkpointName(email) {
   return `account-${digest}.json`;
 }
 
-function successName(identity) {
-  const digest = createHash("sha256").update(JSON.stringify(identity)).digest("hex").slice(0, 20);
+function successName(email) {
+  const digest = createHash("sha256").update(email).digest("hex").slice(0, 20);
   return `success-${digest}.json`;
+}
+
+function sameMailboxPair(saved, current) {
+  if (!saved?.source || !saved?.destination) return true;
+  return saved.source.host === current.source.host
+    && saved.source.port === current.source.port
+    && saved.source.secure === current.source.secure
+    && saved.destination.host === current.destination.host
+    && saved.destination.port === current.destination.port
+    && saved.destination.secure === current.destination.secure;
+}
+
+async function readSuccessRecord(path, identity) {
+  try {
+    const record = JSON.parse(await readFile(path, "utf8"));
+    if (record.identity?.email !== identity.email) return null;
+    if (!sameMailboxPair(record.identity, identity)) return null;
+    if (typeof record.lastSuccessfulSyncAt !== "string") return null;
+    return record;
+  } catch (error) {
+    if (error?.code === "ENOENT" || error instanceof SyntaxError) return null;
+    throw error;
+  }
 }
 
 async function atomicPrivateWrite(path, content) {
@@ -50,7 +73,24 @@ async function atomicPrivateWrite(path, content) {
 export function createCheckpointStore(directory, identity) {
   const stateDirectory = resolve(directory);
   const path = join(stateDirectory, checkpointName(identity.email));
-  const successPath = join(stateDirectory, successName(identity));
+  const successPath = join(stateDirectory, successName(identity.email));
+
+  const findSuccessRecords = async () => {
+    let names;
+    try {
+      names = await readdir(stateDirectory);
+    } catch (error) {
+      if (error?.code === "ENOENT") return [];
+      throw error;
+    }
+    const records = [];
+    for (const name of names.filter((value) => /^success-[a-f0-9]+\.json$/u.test(value))) {
+      const recordPath = join(stateDirectory, name);
+      const record = await readSuccessRecord(recordPath, identity);
+      if (record) records.push({ path: recordPath, record });
+    }
+    return records;
+  };
 
   const ensurePrivateDirectory = async () => {
     await mkdir(stateDirectory, { recursive: true, mode: 0o700 });
@@ -85,15 +125,17 @@ export function createCheckpointStore(directory, identity) {
       await rm(path, { force: true });
     },
     async loadSuccess() {
-      try {
-        const record = JSON.parse(await readFile(successPath, "utf8"));
-        if (JSON.stringify(record.identity) !== JSON.stringify(identity)) return null;
-        if (typeof record.lastSuccessfulSyncAt !== "string") return null;
-        return record;
-      } catch (error) {
-        if (error?.code === "ENOENT" || error instanceof SyntaxError) return null;
-        throw error;
+      const current = await readSuccessRecord(successPath, identity);
+      if (current) return current;
+      const legacy = (await findSuccessRecords()).sort((a, b) =>
+        b.record.lastSuccessfulSyncAt.localeCompare(a.record.lastSuccessfulSyncAt))[0];
+      if (legacy) {
+        await ensurePrivateDirectory();
+        await atomicPrivateWrite(successPath, `${JSON.stringify(legacy.record, null, 2)}\n`);
+        if (legacy.path !== successPath) await rm(legacy.path, { force: true });
+        return legacy.record;
       }
+      return null;
     },
     async saveSuccess(details = {}) {
       await ensurePrivateDirectory();
@@ -106,7 +148,11 @@ export function createCheckpointStore(directory, identity) {
       return record;
     },
     async removeSuccess() {
-      await rm(successPath, { force: true });
+      const records = await findSuccessRecords();
+      await Promise.all([
+        rm(successPath, { force: true }),
+        ...records.map((entry) => rm(entry.path, { force: true })),
+      ]);
     },
   };
 }

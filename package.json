@@ -1,15 +1,35 @@
 {
-  "name": "imap-migration-verifier",
-  "version": "1.0.0",
+  "name": "yandex-escape",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Message-level Yandex to Guzel IMAP migration verifier and repair tool",
+  "description": "Concurrent IMAP email migration tool with message-level verification, recovery, and Yandex/Guzel presets",
+  "license": "MIT",
+  "keywords": [
+    "imap-migration",
+    "imap-migration-verifier",
+    "email-migration",
+    "mailbox-migration",
+    "yandex-mail",
+    "guzel-hosting",
+    "imapsync"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gokhanozdemir/email-migration-verify.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gokhanozdemir/email-migration-verify/issues"
+  },
+  "homepage": "https://github.com/gokhanozdemir/email-migration-verify#readme",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "migrate": "node src/cli.js",
-    "test": "node --test"
+    "backfill-success": "node src/backfill-success.js",
+    "test": "node --test",
+    "check": "node --check src/cli.js && node --test"
   },
   "dependencies": {
     "imapflow": "1.4.2",

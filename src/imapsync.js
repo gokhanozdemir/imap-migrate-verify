@@ -37,12 +37,12 @@ function baseArguments({ account, sourceServer, destinationServer, passfile1, pa
   const args = [
     "--host1", sourceServer.host,
     "--port1", String(sourceServer.port),
-    "--ssl1",
+    ...(sourceServer.secure ? ["--ssl1"] : []),
     "--user1", account.email,
     "--passfile1", passfile1,
     "--host2", destinationServer.host,
     "--port2", String(destinationServer.port),
-    "--ssl2",
+    ...(destinationServer.secure ? ["--ssl2"] : []),
     "--user2", account.email,
     "--passfile2", passfile2,
     "--automap",
@@ -65,8 +65,8 @@ async function createPasswordFiles(account) {
   await chmod(directory, 0o700);
   const source = join(directory, "source.pass");
   const destination = join(directory, "destination.pass");
-  await writeFile(source, `${account.yandexPassword}\n`, { mode: 0o600 });
-  await writeFile(destination, `${account.guzelPassword}\n`, { mode: 0o600 });
+  await writeFile(source, `${account.sourcePassword ?? account.yandexPassword}\n`, { mode: 0o600 });
+  await writeFile(destination, `${account.destinationPassword ?? account.guzelPassword}\n`, { mode: 0o600 });
   return { directory, source, destination };
 }
 
