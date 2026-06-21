@@ -1,4 +1,4 @@
-# Yandex Escape
+# Yandex Business 360 Migrate to Other IMAP Email (Yandex Escape)
 
 ![Yandex Escape: verified email migration between two IMAP servers](docs/assets/yandex-escape-hero.webp)
 
@@ -87,17 +87,39 @@ those separately before decommissioning the source service.
 ## How the migration works
 
 ```mermaid
-flowchart LR
-    A["Load providers and accounts"] --> B["Scan mailboxes concurrently"]
-    B --> C["Match messages across folders"]
-    C --> D{"Missing messages?"}
-    D -- No --> H["PASS report"]
-    D -- Yes --> E["Preview and confirm"]
-    E --> F["Copy bounded UID batches"]
-    F --> G["Rescan and verify"]
+flowchart TB
+    subgraph prepare["1 · Prepare"]
+        direction TB
+        A["Load providers and accounts"]
+        B["Scan source and destination concurrently"]
+        A --> B
+    end
+
+    subgraph verify["2 · Compare"]
+        direction TB
+        C["Match messages across all folders"]
+        D{"Any messages missing?"}
+        C --> D
+    end
+
+    subgraph migrate["3 · Migrate and recover"]
+        direction TB
+        E["Preview and confirm"]
+        F["Copy a bounded UID batch"]
+        I[("Private checkpoint")]
+        E --> F
+        F -. "save progress" .-> I
+        I -. "resume after interruption or quota" .-> F
+    end
+
+    G["Rescan and verify"]
+    H["PASS report"]
+
+    B --> C
+    D -- No --> H
+    D -- Yes --> E
+    F --> G
     G --> D
-    F -. "interruption or quota" .-> I["Private checkpoint"]
-    I --> F
 ```
 
 ## Requirements
@@ -261,11 +283,11 @@ At completion, the CLI prints an Inbox timeline and verification summary:
 
 ```text
 Verification summary
-┌──────────────────────┬──────┬───────┬───────┬──────────┬────────────┬─────────┐
+┌──────────────────────┬────────┬─────────┬────────┬───────────┬────────────┬─────────┐
 │ Account              │ Result │ Checked │ Copied │ Elsewhere │ Unresolved │ Seconds │
-├──────────────────────┼──────┼───────┼───────┼──────────┼────────────┼─────────┤
+├──────────────────────┼────────┼─────────┼────────┼───────────┼────────────┼─────────┤
 │ person@example.com   │ PASS   │   12840 │     12 │         3 │          0 │   42.8  │
-└──────────────────────┴──────┴───────┴───────┴──────────┴────────────┴─────────┘
+└──────────────────────┴────────┴─────────┴────────┴───────────┴────────────┴─────────┘
 Overall: PASS
 ```
 
