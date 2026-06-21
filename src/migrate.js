@@ -81,18 +81,25 @@ export async function processAccount(account, options, dependencies = {}) {
 
   try {
     log(account.email, "Reading Yandex and Guzel inventories");
+    const progress = (provider) => (event) => {
+      if (event.phase === "hydrate") {
+        log(account.email, `${provider}: fingerprinting ${event.messages} ambiguous message(s) in ${event.folder}`);
+      }
+    };
     const [sourceInventory, destinationBefore] = await Promise.all([
       withTransientRetry(() => scan({
         server: SOURCE_SERVER,
         email: account.email,
         password: account.yandexPassword,
         since: sourceSince,
+        onProgress: progress("Yandex"),
       }), retryOptions),
       withTransientRetry(() => scan({
         server: DESTINATION_SERVER,
         email: account.email,
         password: account.guzelPassword,
         since: destinationSince,
+        onProgress: progress("Guzel"),
       }), retryOptions),
     ]);
 
@@ -127,6 +134,7 @@ export async function processAccount(account, options, dependencies = {}) {
       email: account.email,
       password: account.guzelPassword,
       since: destinationSince,
+      onProgress: progress("Guzel"),
     }), retryOptions);
     let afterMatches = matchInventories(sourceInventory.messages, destinationAfter.messages);
 
@@ -151,6 +159,7 @@ export async function processAccount(account, options, dependencies = {}) {
           email: account.email,
           password: account.guzelPassword,
           since: destinationSince,
+          onProgress: progress("Guzel"),
         }), retryOptions);
         afterMatches = matchInventories(sourceInventory.messages, destinationAfter.messages);
       }

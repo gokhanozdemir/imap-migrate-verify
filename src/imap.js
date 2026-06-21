@@ -65,7 +65,14 @@ function createClient(server, email, password) {
   });
 }
 
-export async function scanMailbox({ server, email, password, since, includeMessages = true }) {
+export async function scanMailbox({
+  server,
+  email,
+  password,
+  since,
+  includeMessages = true,
+  onProgress = () => {},
+}) {
   const client = createClient(server, email, password);
   const counts = [];
   const messages = [];
@@ -87,6 +94,7 @@ export async function scanMailbox({ server, email, password, since, includeMessa
 
         if (!includeMessages) continue;
         const uids = await client.search({ since }, { uid: true });
+        onProgress({ phase: "folder", folder: folder.path, recent: uids.length });
         if (!uids.length) continue;
 
         for await (const item of client.fetch(
@@ -134,6 +142,7 @@ export async function scanMailbox({ server, email, password, since, includeMessa
       }
 
       for (const [folder, folderMessages] of hydrationFolders) {
+        onProgress({ phase: "hydrate", folder, messages: folderMessages.length });
         let lock;
         try {
           lock = await client.getMailboxLock(folder, { readOnly: true });
